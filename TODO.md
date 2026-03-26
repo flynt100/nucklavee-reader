@@ -5,9 +5,7 @@ Tracking the seven Week 1 design items from planning.
 1. [x] **Strict typed IR with controlled `GenericBlock` fallback**
    - Added IR-side guardrails so `GenericBlock` is explicit and confidence-bounded.
    - Added `Document::validate_strict()` checks for structural invariants.
-2. [x] **Normalized source metadata (`SourceInfo`) suitable for storage**
-   - `SourceInfo` now stores normalized `kind`, `locator`, `canonical`, and `payload_bytes` fields.
-   - Added normalization tests for file and raw markdown source inputs.
+2. [ ] **Normalized source metadata (`SourceInfo`) suitable for storage**
 3. [ ] **UUID v4 IDs + content-hash dedupe flow contract**
 4. [ ] **Normalized semantic equality for roundtrip tests**
 5. [ ] **Inline canonicalization pass (merge adjacent text nodes)**
@@ -15,4 +13,4 @@ Tracking the seven Week 1 design items from planning.
 7. [ ] **Typed error model expansion across module traits**
 
 ## Next focus
-- Implement Item 3 without crossing into Week 2 parser behavior.
+- Implement Item 2 without crossing into Week 2 parser behavior.
