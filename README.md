@@ -56,12 +56,6 @@ All unimplemented paths currently return explicit `not implemented` errors.
 5. CLI command wiring
 6. PDF pipeline (iterative heuristics)
 
-
-## Week 1 Tracking
-
-- See `TODO.md` for the seven-item Week 1 IR finalization checklist.
-- Item 1 (strict typed IR guardrails + controlled `GenericBlock` fallback) is now implemented at the model/validation layer.
-
 ## Development
 
 ### Build
