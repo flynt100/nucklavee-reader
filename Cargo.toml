@@ -1,0 +1,20 @@
+[package]
+name = "nucklavee"
+version = "0.1.0"
+edition = "2024"
+description = "Universal document transformation library (scaffold)"
+license = "MIT"
+
+[lib]
+name = "nucklavee"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nucklavee"
+path = "src/cli/main.rs"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
