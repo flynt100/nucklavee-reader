@@ -5,8 +5,7 @@ pub trait Parser {
     fn parse(&self, input: &str) -> Result<Document>;
 }
 
-/// Generates a unit-struct parser stub whose `parse` returns a not-implemented error.
-/// Used by format-specific scaffold modules; real implementations will replace these.
+/// Defines a unit-struct parser whose `parse` returns `Error::NotImplemented`.
 macro_rules! parser_stub {
     ($name:ident, $label:expr) => {
         #[derive(Debug, Default)]

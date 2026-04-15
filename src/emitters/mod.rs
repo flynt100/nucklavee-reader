@@ -5,8 +5,7 @@ pub trait Emitter {
     fn emit(&self, document: &Document) -> Result<String>;
 }
 
-/// Generates a unit-struct emitter stub whose `emit` returns a not-implemented error.
-/// Used by format-specific scaffold modules; real implementations will replace these.
+/// Defines a unit-struct emitter whose `emit` returns `Error::NotImplemented`.
 macro_rules! emitter_stub {
     ($name:ident, $label:expr) => {
         #[derive(Debug, Default)]

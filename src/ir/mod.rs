@@ -4,11 +4,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Input source for ingestion.
+/// Input source for ingestion. Re-exported at the crate root as `nucklavee::Source`.
 ///
-/// Lives in `ir` rather than the crate root so that leaf modules can reference
-/// it without forming a cycle back up through `lib.rs`. Re-exported as
-/// `nucklavee::Source` for the public API.
+/// Defined here (not in `lib.rs`) so leaf modules can depend on it without
+/// creating a cycle through the crate root.
 #[derive(Debug, Clone)]
 pub enum Source {
     File(PathBuf),

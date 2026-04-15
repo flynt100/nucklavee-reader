@@ -106,5 +106,4 @@ pub enum Error {
     Embedding(String),
 }
 
-/// Crate-wide `Result` alias defaulting to `crate::Error`.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
