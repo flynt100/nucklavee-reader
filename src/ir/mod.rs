@@ -5,9 +5,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Input source for ingestion. Re-exported at the crate root as `nucklavee::Source`.
-///
-/// Defined here (not in `lib.rs`) so leaf modules can depend on it without
-/// creating a cycle through the crate root.
+// Lives in `ir` (not `lib.rs`) so leaf modules can reference it without
+// routing back through the crate root.
 #[derive(Debug, Clone)]
 pub enum Source {
     File(PathBuf),
