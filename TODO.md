@@ -1,16 +1,20 @@
-# Week 1 IR Finalization TODO
+# Implementation TODO
 
-Tracking the seven Week 1 design items from planning.
+## Week 1 — IR finalization
 
-1. [x] **Strict typed IR with controlled `GenericBlock` fallback**
-   - Added IR-side guardrails so `GenericBlock` is explicit and confidence-bounded.
-   - Added `Document::validate_strict()` checks for structural invariants.
-2. [ ] **Normalized source metadata (`SourceInfo`) suitable for storage**
-3. [ ] **UUID v4 IDs + content-hash dedupe flow contract**
-4. [ ] **Normalized semantic equality for roundtrip tests**
-5. [ ] **Inline canonicalization pass (merge adjacent text nodes)**
-6. [ ] **Table cell fidelity (`Vec<Inline>`) + invariants/tests**
-7. [ ] **Typed error model expansion across module traits**
+1. [x] **Strict typed IR with controlled `GenericBlock` fallback.** `Document::validate_strict()` enforces heading level range, non-empty inline content on headings/paragraphs, and `GenericBlock.confidence` in 0.0..=1.0. Called on every parser output.
+2. [ ] **Normalized source metadata (`SourceInfo`) suitable for storage.** Currently a single `raw_source: String`. Needs at minimum a discriminator (file / url / raw) and enough to drive dedupe and re-ingest decisions.
+3. [ ] UUID v4 IDs + content-hash dedupe flow contract. (Parser populates `content_hash`; dedupe happens in `Library::ingest` once storage exists.)
+4. [x] **Normalized semantic equality for roundtrip tests.** `Document::structural_eq` + whitespace-collapsing `inlines_eq`. Drives `tests/markdown_roundtrip.rs`.
+5. [ ] Inline canonicalization pass (merge adjacent text nodes on parse, not just at compare time).
+6. [ ] Table cell fidelity invariants/tests (rectangular rows, header/body column-count agreement).
+7. [x] **Typed error model across module traits.** `Result<T>` alias + `Error::{Parse, Emit, Chunking, Storage, VectorIndex, Embedding}`.
 
-## Next focus
-- Implement Item 2 without crossing into Week 2 parser behavior.
+## Week 1 exit
+
+Markdown parser, markdown emitter, and roundtrip tests land together. Current status: parser and emitter implemented against `pulldown-cmark` 0.12; 8 fixture roundtrips green.
+
+## Next
+
+- Finish Week 1 item 2 (`SourceInfo` shape + callers).
+- Start Week 2: HTML parser + emitter + cross-format roundtrip.
