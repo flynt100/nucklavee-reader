@@ -39,23 +39,23 @@ where
         }
     }
 
-    pub fn ingest(&mut self, _source: Source) -> Result<DocumentId, Error> {
+    pub fn ingest(&mut self, _source: Source) -> Result<DocumentId> {
         Err(Error::NotImplemented("ingest"))
     }
 
-    pub fn query(&self, _text: &str, _limit: usize) -> Result<Vec<Chunk>, Error> {
+    pub fn query(&self, _text: &str, _limit: usize) -> Result<Vec<Chunk>> {
         Err(Error::NotImplemented("query"))
     }
 
-    pub fn get_document(&self, _id: DocumentId) -> Result<Document, Error> {
+    pub fn get_document(&self, _id: DocumentId) -> Result<Document> {
         Err(Error::NotImplemented("get_document"))
     }
 
-    pub fn emit(&self, _id: DocumentId, _format: Format) -> Result<String, Error> {
+    pub fn emit(&self, _id: DocumentId, _format: Format) -> Result<String> {
         Err(Error::NotImplemented("emit"))
     }
 
-    pub fn context_window(&self, _query: &str, _token_budget: usize) -> Result<String, Error> {
+    pub fn context_window(&self, _query: &str, _token_budget: usize) -> Result<String> {
         Err(Error::NotImplemented("context_window"))
     }
 
@@ -87,6 +87,15 @@ pub enum Error {
     #[error("invalid input: {0}")]
     InvalidInput(String),
 
+    #[error("parse error: {0}")]
+    Parse(String),
+
+    #[error("emit error: {0}")]
+    Emit(String),
+
+    #[error("chunking error: {0}")]
+    Chunking(String),
+
     #[error("storage error: {0}")]
     Storage(String),
 
@@ -96,3 +105,6 @@ pub enum Error {
     #[error("embedding error: {0}")]
     Embedding(String),
 }
+
+/// Crate-wide `Result` alias defaulting to `crate::Error`.
+pub type Result<T, E = Error> = std::result::Result<T, E>;

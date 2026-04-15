@@ -1,7 +1,8 @@
+use crate::Result;
 use crate::ir::Document;
 
 pub trait Emitter {
-    fn emit(&self, document: &Document) -> Result<String, String>;
+    fn emit(&self, document: &Document) -> Result<String>;
 }
 
 /// Generates a unit-struct emitter stub whose `emit` returns a not-implemented error.
@@ -12,8 +13,11 @@ macro_rules! emitter_stub {
         pub struct $name;
 
         impl $crate::emitters::Emitter for $name {
-            fn emit(&self, _document: &$crate::ir::Document) -> Result<String, String> {
-                Err(concat!($label, " emitter not implemented").to_string())
+            fn emit(&self, _document: &$crate::ir::Document) -> $crate::Result<String> {
+                Err($crate::Error::NotImplemented(concat!(
+                    $label,
+                    " emitter"
+                )))
             }
         }
     };

@@ -1,7 +1,8 @@
+use crate::Result;
 use crate::ir::Document;
 
 pub trait Parser {
-    fn parse(&self, input: &str) -> Result<Document, String>;
+    fn parse(&self, input: &str) -> Result<Document>;
 }
 
 /// Generates a unit-struct parser stub whose `parse` returns a not-implemented error.
@@ -12,8 +13,11 @@ macro_rules! parser_stub {
         pub struct $name;
 
         impl $crate::parsers::Parser for $name {
-            fn parse(&self, _input: &str) -> Result<$crate::ir::Document, String> {
-                Err(concat!($label, " parser not implemented").to_string())
+            fn parse(&self, _input: &str) -> $crate::Result<$crate::ir::Document> {
+                Err($crate::Error::NotImplemented(concat!(
+                    $label,
+                    " parser"
+                )))
             }
         }
     };
