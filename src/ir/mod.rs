@@ -1,8 +1,21 @@
+use std::path::PathBuf;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::Source;
+/// Input source for ingestion.
+///
+/// Lives in `ir` rather than the crate root so that leaf modules can reference
+/// it without forming a cycle back up through `lib.rs`. Re-exported as
+/// `nucklavee::Source` for the public API.
+#[derive(Debug, Clone)]
+pub enum Source {
+    File(PathBuf),
+    Url(String),
+    RawMarkdown(String),
+    RawHtml(String),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {

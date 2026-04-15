@@ -10,10 +10,8 @@ pub mod pipeline;
 pub mod storage;
 pub mod vector;
 
-use std::path::PathBuf;
-
 pub use chunking::Chunk;
-pub use ir::{Document, DocumentId, SourceFormat};
+pub use ir::{Document, DocumentId, Source, SourceFormat};
 
 /// Primary API entrypoint for document ingestion and retrieval.
 pub struct Library<S, V, E>
@@ -72,14 +70,6 @@ where
     pub fn embedder(&self) -> &E {
         &self.embedder
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum Source {
-    File(PathBuf),
-    Url(String),
-    RawMarkdown(String),
-    RawHtml(String),
 }
 
 #[derive(Debug, Clone, Copy)]
