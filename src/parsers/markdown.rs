@@ -14,20 +14,12 @@ use crate::{Error, Result};
 pub struct MarkdownParser;
 
 impl Parser for MarkdownParser {
-    fn parse(&self, input: &str) -> Result<Document> {
-        parse_markdown(input, Source::RawMarkdown(input.to_string()))
-    }
-}
-
-impl MarkdownParser {
-    /// Parse with a caller-supplied `Source` (e.g. the originating file path)
-    /// so document metadata records provenance accurately.
-    pub fn parse_with_source(&self, input: &str, source: Source) -> Result<Document> {
+    fn parse(&self, input: &str, source: &Source) -> Result<Document> {
         parse_markdown(input, source)
     }
 }
 
-fn parse_markdown(input: &str, source: Source) -> Result<Document> {
+fn parse_markdown(input: &str, source: &Source) -> Result<Document> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
@@ -52,7 +44,7 @@ fn parse_markdown(input: &str, source: Source) -> Result<Document> {
     Ok(Document {
         meta: DocumentMeta {
             id: Uuid::new_v4(),
-            source: SourceInfo::from(&source),
+            source: SourceInfo::from(source),
             format: SourceFormat::Markdown,
             title,
             ingested_at: Utc::now(),

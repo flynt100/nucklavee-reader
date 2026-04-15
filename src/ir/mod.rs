@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::{Error, Result};
+
 /// Input source for ingestion. Re-exported at the crate root as `nucklavee::Source`.
 // Lives in `ir` (not `lib.rs`) so leaf modules can reference it without
 // routing back through the crate root.
@@ -13,6 +15,47 @@ pub enum Source {
     Url(String),
     RawMarkdown(String),
     RawHtml(String),
+}
+
+impl Source {
+    /// Read the source into a UTF-8 string. File I/O happens here; URL
+    /// fetching is not yet wired.
+    pub fn read_text(&self) -> Result<String> {
+        match self {
+            Source::RawMarkdown(s) | Source::RawHtml(s) => Ok(s.clone()),
+            Source::File(path) => std::fs::read_to_string(path).map_err(|e| {
+                Error::InvalidInput(format!("cannot read {}: {e}", path.display()))
+            }),
+            Source::Url(_) => Err(Error::NotImplemented("url ingestion")),
+        }
+    }
+
+    /// Infer which parser should handle this source.
+    pub fn detect_format(&self) -> Result<SourceFormat> {
+        match self {
+            Source::RawMarkdown(_) => Ok(SourceFormat::Markdown),
+            Source::RawHtml(_) => Ok(SourceFormat::Html),
+            Source::File(path) => {
+                let ext = path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_ascii_lowercase);
+                match ext.as_deref() {
+                    Some("md") | Some("markdown") => Ok(SourceFormat::Markdown),
+                    Some("html") | Some("htm") => Ok(SourceFormat::Html),
+                    Some("pdf") => Ok(SourceFormat::Pdf),
+                    Some(other) => Err(Error::InvalidInput(format!(
+                        "unsupported file extension: {other}"
+                    ))),
+                    None => Err(Error::InvalidInput(format!(
+                        "file has no extension: {}",
+                        path.display()
+                    ))),
+                }
+            }
+            Source::Url(_) => Err(Error::NotImplemented("url ingestion")),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

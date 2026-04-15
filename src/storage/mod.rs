@@ -1,12 +1,18 @@
 use crate::Result;
-use crate::chunking::Chunk;
 use crate::ir::{Document, DocumentId};
 
 pub trait DocumentStore {
-    fn upsert_document(&self, document: &Document) -> Result<()>;
-    fn get_document(&self, id: DocumentId) -> Result<Document>;
-    fn insert_chunks(&self, chunks: &[Chunk]) -> Result<()>;
-    fn get_chunks_by_document(&self, id: DocumentId) -> Result<Vec<Chunk>>;
+    /// Persist a document. Overwrites any existing entry with the same id.
+    fn put(&self, document: &Document) -> Result<()>;
+
+    /// Look up a document by id.
+    fn get(&self, id: DocumentId) -> Result<Document>;
+
+    /// Return the id of an existing document whose `content_hash` matches,
+    /// or `None` if no such document is stored. Used by `Library::ingest` to
+    /// dedupe identical content.
+    fn find_by_content_hash(&self, hash: &str) -> Result<Option<DocumentId>>;
 }
 
+pub mod in_memory;
 pub mod sqlite;

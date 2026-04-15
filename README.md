@@ -15,65 +15,44 @@ Build a standalone crate and CLI that can ingest source documents and produce re
 
 In short: **normalize anything, preserve structure, and make it searchable.**
 
-## Current State (Scaffold)
-
-This repository now contains the initial crate setup and foundational architecture:
-
-- `Library` API scaffold in `src/lib.rs`
-- Core IR types in `src/ir/mod.rs`
-- Parser trait + format parser stubs (`markdown`, `html`, `pdf`)
-- Emitter trait + format emitter stubs (`markdown`, `html`, `text`)
-- Chunking model + trait scaffold
-- Storage abstraction + sqlite placeholder
-- Vector index abstraction + usearch placeholder
-- Embedder abstraction + API embedder config scaffold
-- Context/pipeline placeholders
-- CLI binary target scaffold (`nucklavee`)
-
 ## What Works Right Now
 
-- The crate compiles.
-- The CLI target builds and runs.
-- The architecture boundaries are in place for incremental implementation.
+- **Markdown parser + emitter** with roundtrip tests against nested lists, GFM tables, code blocks, blockquotes, inline styles, links, images, and thematic breaks.
+- **`Document::validate_strict`** enforces heading level bounds, non-empty inline content, and `GenericBlock.confidence` range.
+- **`Document::structural_eq`** compares two IR trees with whitespace-tolerant inline normalization (the roundtrip oracle).
+- **`Library<S: DocumentStore>`** wires `ingest`, `get_document`, and `emit` end-to-end. SHA-256 content-hash dedupe is live.
+- **`InMemoryDocumentStore`** for tests and for exercising the facade without SQLite.
+- **CLI:** `nucklavee parse <path>` prints the IR as JSON; `nucklavee emit <path>` prints re-emitted markdown.
 
 ## What Is Not Implemented Yet
 
-- Actual parser/emitter logic
-- Chunking algorithm implementation
-- SQLite persistence implementation
-- Vector index integration
-- Embedding API calls
-- End-to-end ingest/search/context flows
+- HTML parser / emitter
+- PDF parser
+- PlainText emitter
+- Chunker
+- SQLite persistence (scaffold type exists; no impl)
+- Vector index (scaffold type exists; no impl)
+- Embedder (scaffold types exist; no impl)
+- `Library::query` and `Library::context_window` (return `Error::NotImplemented`)
 
-All unimplemented paths currently return explicit `not implemented` errors.
+All unimplemented paths return explicit `not implemented` errors.
 
 ## Near-Term Implementation Order
 
-1. IR validation and test harness utilities
-2. Markdown parser + markdown emitter + roundtrip tests
+1. ~~IR validation and test harness utilities~~ (done)
+2. ~~Markdown parser + markdown emitter + roundtrip tests~~ (done)
 3. HTML parser/emitter and cross-format tests
-4. Store + chunking + embedder + vector index
-5. CLI command wiring
+4. Chunker + SQLite store + embedder + vector index
+5. CLI `ingest` / `search` / `context` commands
 6. PDF pipeline (iterative heuristics)
 
 ## Development
 
-### Build
-
 ```bash
 cargo build
-```
-
-### Run tests
-
-```bash
 cargo test
-```
-
-### Run CLI scaffold
-
-```bash
-cargo run --bin nucklavee
+cargo run --bin nucklavee -- parse path/to/file.md
+cargo run --bin nucklavee -- emit  path/to/file.md
 ```
 
 ## Reference Spec

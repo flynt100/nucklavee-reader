@@ -2,6 +2,7 @@ use std::path::Path;
 
 use nucklavee::emitters::Emitter;
 use nucklavee::emitters::markdown::MarkdownEmitter;
+use nucklavee::ir::Source;
 use nucklavee::parsers::Parser;
 use nucklavee::parsers::markdown::MarkdownParser;
 
@@ -12,14 +13,19 @@ fn roundtrip(fixture: &str) {
     let input = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
 
-    let first = MarkdownParser.parse(&input).expect("first parse");
+    let first_source = Source::File(path.clone());
+    let first = MarkdownParser
+        .parse(&input, &first_source)
+        .expect("first parse");
     first
         .validate_strict()
         .expect("first parse produced invalid IR");
 
     let emitted = MarkdownEmitter.emit(&first).expect("emit");
 
-    let second = MarkdownParser.parse(&emitted).expect("second parse");
+    let second = MarkdownParser
+        .parse(&emitted, &Source::RawMarkdown(emitted.clone()))
+        .expect("second parse");
     second
         .validate_strict()
         .expect("second parse produced invalid IR");

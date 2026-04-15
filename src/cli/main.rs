@@ -6,6 +6,7 @@ use clap::{Parser as ClapParser, Subcommand};
 use nucklavee::emitters::Emitter;
 use nucklavee::emitters::markdown::MarkdownEmitter;
 use nucklavee::ir::Source;
+use nucklavee::parsers::Parser;
 use nucklavee::parsers::markdown::MarkdownParser;
 
 #[derive(Debug, ClapParser)]
@@ -46,9 +47,11 @@ fn main() -> ExitCode {
 
 fn run_parse(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let (input, source) = read_input(&path)?;
-    let mut document = MarkdownParser.parse_with_source(&input, source)?;
-    document.validate_strict().map_err(|e| format!("invalid IR produced: {e}"))?;
-    // Stable identity for debug output so the printed JSON is reproducible.
+    let mut document = MarkdownParser.parse(&input, &source)?;
+    document
+        .validate_strict()
+        .map_err(|e| format!("invalid IR produced: {e}"))?;
+    // Zero the UUID so snapshot-style diffs of the printed JSON are stable.
     document.meta.id = uuid::Uuid::nil();
     let json = serde_json::to_string_pretty(&document)?;
     println!("{json}");
@@ -57,7 +60,7 @@ fn run_parse(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_emit(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let (input, source) = read_input(&path)?;
-    let document = MarkdownParser.parse_with_source(&input, source)?;
+    let document = MarkdownParser.parse(&input, &source)?;
     let output = MarkdownEmitter.emit(&document)?;
     print!("{output}");
     Ok(())

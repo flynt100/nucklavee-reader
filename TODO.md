@@ -12,9 +12,10 @@
 
 ## Week 1 exit
 
-Markdown parser, markdown emitter, and roundtrip tests land together. Current status: parser and emitter implemented against `pulldown-cmark` 0.12; 8 fixture roundtrips green.
+Markdown parser, markdown emitter, and roundtrip tests land together. Status: parser and emitter implemented against `pulldown-cmark` 0.12; 8 fixture roundtrips green; `Library<S: DocumentStore>` wires `ingest`/`get_document`/`emit` end-to-end against `InMemoryDocumentStore`; dedupe by content hash is live.
 
 ## Next
 
-- Finish Week 1 item 2 (`SourceInfo` shape + callers).
+- Week 1 item 2: rename `SourceInfo.raw_source` and give it enough structure for real dedupe/re-ingest decisions.
+- Week 1 item 5: inline canonicalization during parse (merge adjacent text nodes at build time, not just at compare time).
 - Start Week 2: HTML parser + emitter + cross-format roundtrip.
