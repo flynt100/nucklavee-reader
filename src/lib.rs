@@ -11,7 +11,11 @@ pub mod storage;
 pub mod vector;
 
 pub use chunking::Chunk;
-pub use ir::{Document, DocumentId, Source, SourceFormat};
+pub use ir::{
+    Block, BlockNode, ByteRange, Diagnostic, DiagnosticKind, Document, DocumentId, DocumentMeta,
+    Inline, ListItem, Provenance, Source, SourceFormat, SourceInfo, Style, ValidationError,
+    normalize_document, structural_diff, structurally_equivalent, validate,
+};
 
 /// Primary API entrypoint for document ingestion and retrieval.
 pub struct Library<S, V, E>
