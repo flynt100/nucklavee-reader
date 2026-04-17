@@ -4,7 +4,6 @@ Tracking the seven Week 1 design items from planning.
 
 1. [x] **Strict typed IR with controlled `GenericBlock` fallback**
    - Added IR-side guardrails so `GenericBlock` is explicit and confidence-bounded.
-   - Added `Document::validate_strict()` checks for structural invariants.
 2. [ ] **Normalized source metadata (`SourceInfo`) suitable for storage**
 3. [ ] **UUID v4 IDs + content-hash dedupe flow contract**
 4. [ ] **Normalized semantic equality for roundtrip tests**
