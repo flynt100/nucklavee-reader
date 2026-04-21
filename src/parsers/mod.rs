@@ -13,10 +13,7 @@ macro_rules! parser_stub {
 
         impl $crate::parsers::Parser for $name {
             fn parse(&self, _input: &str) -> $crate::Result<$crate::ir::Document> {
-                Err($crate::Error::NotImplemented(concat!(
-                    $label,
-                    " parser"
-                )))
+                Err($crate::Error::NotImplemented(concat!($label, " parser")))
             }
         }
     };

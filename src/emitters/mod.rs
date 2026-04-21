@@ -13,10 +13,7 @@ macro_rules! emitter_stub {
 
         impl $crate::emitters::Emitter for $name {
             fn emit(&self, _document: &$crate::ir::Document) -> $crate::Result<String> {
-                Err($crate::Error::NotImplemented(concat!(
-                    $label,
-                    " emitter"
-                )))
+                Err($crate::Error::NotImplemented(concat!($label, " emitter")))
             }
         }
     };
