@@ -15,6 +15,8 @@ path = "src/cli/main.rs"
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
+pulldown-cmark = { version = "0.10", default-features = false }
 serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
 thiserror = "2"
 uuid = { version = "1", features = ["serde", "v4"] }

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::Result;
 use crate::ir::DocumentId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,5 +25,5 @@ pub enum ChunkBlockType {
 pub type ChunkId = Uuid;
 
 pub trait Chunker {
-    fn chunk(&self, _document_id: DocumentId, _body_text: &str) -> Result<Vec<Chunk>, String>;
+    fn chunk(&self, document_id: DocumentId, body_text: &str) -> Result<Vec<Chunk>>;
 }

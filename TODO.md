@@ -4,17 +4,10 @@ This file tracks implementation phases across the current scaffold-to-MVP plan.
 
 ## Phase 1 — IR Finalization (Week 1)
 
-Tracking the seven Week 1 design items from planning.
+Phase 1 delivers a trustworthy vertical slice: IR + Markdown roundtrip +
+block-level provenance + explicit diagnostics for lossy/unsupported cases.
 
-1. [x] **Strict typed IR with controlled `GenericBlock` fallback**
-   - Added IR-side guardrails so `GenericBlock` is explicit and confidence-bounded.
-   - Added `Document::validate_strict()` checks for structural invariants.
-2. [ ] **Normalized source metadata (`SourceInfo`) suitable for storage**
-3. [ ] **UUID v4 IDs + content-hash dedupe flow contract**
-4. [ ] **Normalized semantic equality for roundtrip tests**
-5. [ ] **Inline canonicalization pass (merge adjacent text nodes)**
-6. [ ] **Table cell fidelity (`Vec<Inline>`) + invariants/tests**
-7. [ ] **Typed error model expansion across module traits**
+## Done (Phase 1)
 
 ## Phase 2 — Markdown Parser + Markdown Emitter + Roundtrip Harness
 
