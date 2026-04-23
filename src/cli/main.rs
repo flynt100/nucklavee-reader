@@ -1,6 +1,6 @@
-use std::env;
 use std::process::ExitCode;
 
+use clap::{Parser, Subcommand};
 use nucklavee::chunking::ChunkId;
 use nucklavee::embedder::Embedder;
 use nucklavee::ir::{DocumentId, Source};
@@ -35,38 +35,14 @@ impl Embedder for NoopEmbedder {
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
-    if args.is_empty() {
-        print_usage();
-        return ExitCode::from(2);
-    }
-
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
         NoopEmbedder,
     );
 
-    let result = match args[0].as_str() {
-        "ingest" => run_ingest(&mut lib, &args[1..]),
-        "emit" => run_emit(&lib, &args[1..]),
-        "query" => Err(nucklavee::Error::NotImplemented(
-            "query is not implemented in Phase 2 (markdown ingest/emit only)",
-        )),
-        "context_window" => Err(nucklavee::Error::NotImplemented(
-            "context_window is not implemented in Phase 2 (markdown ingest/emit only)",
-        )),
-        "html" => Err(nucklavee::Error::NotImplemented(
-            "html pipeline is not implemented in Phase 2; markdown only",
-        )),
-        "pdf" => Err(nucklavee::Error::NotImplemented(
-            "pdf pipeline is not implemented in Phase 2; markdown only",
-        )),
-        _ => {
-            print_usage();
-            return ExitCode::from(2);
-        }
-    };
+    let cli = Cli::parse();
+    let result = run_phase2_service(&mut lib, cli.command);
 
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -77,70 +53,67 @@ fn main() -> ExitCode {
     }
 }
 
+#[derive(Debug, Parser)]
+#[command(name = "nucklavee")]
+#[command(about = "nucklavee Phase-2 CLI", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    Ingest {
+        path: String,
+    },
+    Emit {
+        #[arg(long)]
+        id: DocumentId,
+        #[arg(long, value_parser = parse_format)]
+        format: Format,
+    },
+    Query,
+    ContextWindow,
+    Html,
+    Pdf,
+}
+
+fn run_phase2_service(
+    lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
+    command: Commands,
+) -> Result<()> {
+    match command {
+        Commands::Ingest { path } => run_ingest(lib, &path),
+        Commands::Emit { id, format } => run_emit(lib, id, format),
+        Commands::Query => Err(nucklavee::Error::NotImplemented(
+            "query is not implemented in Phase 2 (markdown ingest/emit only)",
+        )),
+        Commands::ContextWindow => Err(nucklavee::Error::NotImplemented(
+            "context_window is not implemented in Phase 2 (markdown ingest/emit only)",
+        )),
+        Commands::Html => Err(nucklavee::Error::NotImplemented(
+            "html pipeline is not implemented in Phase 2; markdown only",
+        )),
+        Commands::Pdf => Err(nucklavee::Error::NotImplemented(
+            "pdf pipeline is not implemented in Phase 2; markdown only",
+        )),
+    }
+}
+
 fn run_ingest(
     lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
-    args: &[String],
+    path: &str,
 ) -> Result<()> {
-    if args.len() != 1 {
-        return Err(nucklavee::Error::InvalidInput(
-            "usage: nucklavee ingest <path.md>".to_string(),
-        ));
-    }
-
-    let id = lib.ingest(Source::File(args[0].clone().into()))?;
+    let id = lib.ingest(Source::File(path.into()))?;
     println!("{id}");
     Ok(())
 }
 
 fn run_emit(
-    lib: &Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
-    args: &[String],
+    lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
+    id: DocumentId,
+    format: Format,
 ) -> Result<()> {
-    let mut id: Option<DocumentId> = None;
-    let mut format: Option<Format> = None;
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--id" => {
-                let Some(raw_id) = args.get(i + 1) else {
-                    return Err(nucklavee::Error::InvalidInput(
-                        "missing value for --id".to_string(),
-                    ));
-                };
-                id = Some(raw_id.parse().map_err(|err| {
-                    nucklavee::Error::InvalidInput(format!("invalid document id '{raw_id}': {err}"))
-                })?);
-                i += 2;
-            }
-            "--format" => {
-                let Some(raw_format) = args.get(i + 1) else {
-                    return Err(nucklavee::Error::InvalidInput(
-                        "missing value for --format".to_string(),
-                    ));
-                };
-                format = Some(parse_format(raw_format)?);
-                i += 2;
-            }
-            unexpected => {
-                return Err(nucklavee::Error::InvalidInput(format!(
-                    "unexpected argument '{unexpected}'. usage: nucklavee emit --id <doc_id> --format markdown"
-                )));
-            }
-        }
-    }
-
-    let id = id.ok_or_else(|| {
-        nucklavee::Error::InvalidInput(
-            "missing --id. usage: nucklavee emit --id <doc_id> --format markdown".to_string(),
-        )
-    })?;
-    let format = format.ok_or_else(|| {
-        nucklavee::Error::InvalidInput(
-            "missing --format. usage: nucklavee emit --id <doc_id> --format markdown".to_string(),
-        )
-    })?;
-
     let output = lib.emit(id, format)?;
     println!("{output}");
     Ok(())
@@ -155,11 +128,4 @@ fn parse_format(raw: &str) -> Result<Format> {
             "unsupported format '{raw}'. supported: markdown"
         ))),
     }
-}
-
-fn print_usage() {
-    eprintln!("nucklavee Phase-2 CLI");
-    eprintln!("usage:");
-    eprintln!("  nucklavee ingest <path.md>");
-    eprintln!("  nucklavee emit --id <doc_id> --format markdown");
 }
