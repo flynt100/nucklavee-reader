@@ -84,3 +84,4 @@ cargo run --bin nucklavee
 ## Reference Spec
 
 - `nucklavee-spec.md` (source of truth for scope and behavior)
+- `docs/phase-gates.md` (phase exit criteria and blocker vs warning policy)

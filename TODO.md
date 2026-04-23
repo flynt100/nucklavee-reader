@@ -86,3 +86,4 @@ Primary goal: practical PDF ingestion with explicit confidence and graceful fall
 
 - **Current truth:** Markdown parser/emitter and IR roundtrip harness are complete.
 - **Exact next focus:** finish Phase 2B hardening: normalization policy docs, fixture expansion deltas, and CLI integration boundary.
+- **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).
