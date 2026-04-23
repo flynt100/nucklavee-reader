@@ -63,3 +63,19 @@ cargo test --test validation --test diagnostics --test markdown_roundtrip
 ```
 
 Phase 1 exit is approved only when this command succeeds without failures.
+
+## Phase-2 dependency gate policy
+
+To preserve implementation focus and avoid premature coupling during Phase-2,
+dependency additions are constrained by gate criteria:
+
+> no new runtime/storage/vector deps during Phase-2 unless required by an accepted gate criterion.
+
+Implications:
+
+- CLI command parsing dependencies are allowed when directly required for
+  Phase-2 command usability.
+- `serde_json` should remain optional and only be added when JSON diagnostics or
+  IR printing is explicitly required by an accepted gate criterion.
+- Async/runtime, storage backends, and vector/database dependencies are deferred
+  until Phase-3 wiring.
