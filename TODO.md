@@ -9,22 +9,21 @@ block-level provenance + explicit diagnostics for lossy/unsupported cases.
 
 ## Done (Phase 1)
 
-## Phase 2 — Markdown Parser + Markdown Emitter + Roundtrip Harness
+## Phase 2A — Completed Foundation (Markdown Core Loop)
 
-Primary goal: establish the first fully working ingest/emit loop on the canonical format.
+Primary goal delivered: establish the first working ingest/emit loop on the canonical format.
 
-1. [ ] Implement `MarkdownParser` (`pulldown-cmark`) with stack-based tree construction.
-2. [ ] Implement markdown emitter that preserves semantic structure from IR.
-3. [ ] Add IR roundtrip test harness (parse -> emit -> parse -> semantic compare).
-4. [ ] Add fixture coverage for:
-   - [ ] Nested lists (3+ levels)
-   - [ ] Tables with inline formatting in cells
-   - [ ] Code blocks with and without language tags
-   - [ ] Blockquotes with mixed child blocks
-   - [ ] Heading hierarchy (H1-H4+)
-   - [ ] Links, images, thematic breaks, inline code/styled adjacency
-   - [ ] Empty list items / empty paragraphs edge cases
-5. [ ] Define and document acceptable normalization deltas (whitespace-only differences).
+1. [x] Implement `MarkdownParser` (`pulldown-cmark`) with tree construction.
+2. [x] Implement markdown emitter that preserves semantic structure from IR.
+3. [x] Add IR roundtrip test harness (parse -> emit -> parse -> semantic compare).
+
+## Phase 2B — Remaining Phase-2 Hardening
+
+Primary goal: tighten behavior contracts and handoff boundaries around the completed Markdown core loop.
+
+1. [ ] Define and document acceptable normalization deltas (whitespace-only differences).
+2. [ ] Expand fixture coverage deltas for difficult Markdown edge patterns.
+3. [ ] Define/lock CLI integration boundary for parser/emitter + roundtrip workflow.
 
 ## Phase 3 — HTML Parser/Emitter + Cross-Format Integrity
 
@@ -83,6 +82,7 @@ Primary goal: practical PDF ingestion with explicit confidence and graceful fall
 5. [ ] Performance baselines for ingest/query on representative corpora.
 6. [ ] Documentation updates per phase (README + examples + migration notes).
 
-## Current Next Focus
+## Status Snapshot
 
-- Complete Phase 1 item #2 (`SourceInfo` normalization) before beginning Phase 2 parser behavior.
+- **Current truth:** Markdown parser/emitter and IR roundtrip harness are complete.
+- **Exact next focus:** finish Phase 2B hardening: normalization policy docs, fixture expansion deltas, and CLI integration boundary.

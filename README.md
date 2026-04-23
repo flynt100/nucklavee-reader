@@ -15,46 +15,51 @@ Build a standalone crate and CLI that can ingest source documents and produce re
 
 In short: **normalize anything, preserve structure, and make it searchable.**
 
-## Current State (Scaffold)
+## Current State
 
-This repository now contains the initial crate setup and foundational architecture:
+This repository has moved beyond pure scaffolding and now includes a working
+Markdown ingest/emit slice plus test harnesses:
 
 - `Library` API scaffold in `src/lib.rs`
 - Core IR types in `src/ir/mod.rs`
-- Parser trait + format parser stubs (`markdown`, `html`, `pdf`)
-- Emitter trait + format emitter stubs (`markdown`, `html`, `text`)
+- Parser trait + format parser paths (`markdown` implemented; `html`/`pdf` still scaffolded)
+- Emitter trait + format emitter paths (`markdown` implemented; others still scaffolded)
 - Chunking model + trait scaffold
 - Storage abstraction + sqlite placeholder
 - Vector index abstraction + usearch placeholder
 - Embedder abstraction + API embedder config scaffold
 - Context/pipeline placeholders
 - CLI binary target scaffold (`nucklavee`)
+- Markdown roundtrip harness and fixture-driven tests
 
 ## What Works Right Now
 
 - The crate compiles.
 - The CLI target builds and runs.
-- The architecture boundaries are in place for incremental implementation.
+- Markdown parser is implemented.
+- Markdown emitter is implemented.
+- IR roundtrip harness (parse -> emit -> parse -> semantic compare) is implemented.
+- Architecture boundaries are in place for incremental implementation.
 
 ## What Is Not Implemented Yet
 
-- Actual parser/emitter logic
+- HTML and PDF parser logic
+- Non-markdown emitter implementations
 - Chunking algorithm implementation
 - SQLite persistence implementation
 - Vector index integration
 - Embedding API calls
 - End-to-end ingest/search/context flows
 
-All unimplemented paths currently return explicit `not implemented` errors.
+Remaining unimplemented paths currently return explicit `not implemented` errors.
 
 ## Near-Term Implementation Order
 
-1. IR validation and test harness utilities
-2. Markdown parser + markdown emitter + roundtrip tests
-3. HTML parser/emitter and cross-format tests
-4. Store + chunking + embedder + vector index
-5. CLI command wiring
-6. PDF pipeline (iterative heuristics)
+1. Phase 2 hardening (normalization policy, fixture deltas, CLI integration boundary)
+2. HTML parser/emitter and cross-format tests
+3. Store + chunking + embedder + vector index
+4. CLI command wiring
+5. PDF pipeline (iterative heuristics)
 
 ## Development
 
