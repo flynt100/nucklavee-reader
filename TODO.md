@@ -9,9 +9,25 @@ block-level provenance + explicit diagnostics for lossy/unsupported cases.
 
 ## Done (Phase 1)
 
+1. [x] **IR validation invariants complete and tested**
+   - Validation rules are implemented and exercised by `tests/validation.rs`.
+2. [x] **Normalization + structural equivalence stable**
+   - Canonicalization/normalization behavior is deterministic and structural
+     equivalence remains stable under expected deltas; coverage anchored by
+     `tests/validation.rs` and roundtrip semantics in
+     `tests/markdown_roundtrip.rs`.
+3. [x] **Markdown parse->emit->parse fixtures passing**
+   - All committed Markdown fixture cases pass through the roundtrip harness in
+     `tests/markdown_roundtrip.rs`.
+4. [x] **Diagnostics behavior defined for unsupported/lossy cases**
+   - Expected diagnostics taxonomy and behavior are explicit and covered by
+     `tests/diagnostics.rs`.
+
+Phase 1 quality gate is satisfied by tests `validation`/`diagnostics`/`markdown_roundtrip`; Phase 2A denotes post-gate packaging/wiring work.
+
 ## Phase 2A — Completed Foundation (Markdown Core Loop)
 
-Primary goal delivered: establish the first working ingest/emit loop on the canonical format.
+Primary goal delivered: post-gate packaging/wiring for the first working ingest/emit loop on the canonical format.
 
 1. [x] Implement `MarkdownParser` (`pulldown-cmark`) with tree construction.
 2. [x] Implement markdown emitter that preserves semantic structure from IR.

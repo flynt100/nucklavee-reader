@@ -63,6 +63,7 @@ cargo test --test validation --test diagnostics --test markdown_roundtrip
 ```
 
 Phase 1 exit is approved only when this command succeeds without failures.
+Phase 1 quality gate is satisfied by tests `validation`/`diagnostics`/`markdown_roundtrip`; Phase 2A denotes post-gate packaging/wiring work.
 
 ## Phase-2 dependency gate policy
 
