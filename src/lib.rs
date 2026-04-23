@@ -43,24 +43,83 @@ where
         }
     }
 
-    pub fn ingest(&mut self, _source: Source) -> Result<DocumentId> {
-        Err(Error::NotImplemented("ingest"))
+    pub fn ingest(&mut self, source: Source) -> Result<DocumentId> {
+        let (markdown, source_descriptor) = match source {
+            Source::File(path) => {
+                let ext = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or_default();
+                if !ext.eq_ignore_ascii_case("md") {
+                    return Err(Error::NotImplemented(
+                        "ingest currently supports markdown files only (.md). html/pdf ingest is not implemented in Phase 2",
+                    ));
+                }
+
+                let markdown = std::fs::read_to_string(&path).map_err(|err| {
+                    Error::InvalidInput(format!(
+                        "failed reading markdown file '{}': {err}",
+                        path.display()
+                    ))
+                })?;
+                (markdown, path.display().to_string())
+            }
+            Source::RawMarkdown(markdown) => (markdown, "raw:markdown".to_string()),
+            Source::Url(_) => {
+                return Err(Error::NotImplemented(
+                    "URL ingest is not implemented in Phase 2; provide a local .md file",
+                ));
+            }
+            Source::RawHtml(_) => {
+                return Err(Error::NotImplemented(
+                    "html ingest is not implemented in Phase 2; markdown only",
+                ));
+            }
+        };
+
+        let doc = parsers::markdown::parse_markdown(
+            &markdown,
+            parsers::markdown::ParseOptions {
+                source_descriptor: Some(source_descriptor),
+            },
+        );
+
+        validate(&doc, Some(markdown.len()))
+            .map_err(|err| Error::InvalidInput(format!("validation failed: {err}")))?;
+
+        self.store.upsert_document(&doc)?;
+
+        Ok(doc.meta.id)
     }
 
     pub fn query(&self, _text: &str, _limit: usize) -> Result<Vec<Chunk>> {
-        Err(Error::NotImplemented("query"))
+        Err(Error::NotImplemented(
+            "query is not implemented in Phase 2 (markdown ingest/emit only)",
+        ))
     }
 
-    pub fn get_document(&self, _id: DocumentId) -> Result<Document> {
-        Err(Error::NotImplemented("get_document"))
+    pub fn get_document(&self, id: DocumentId) -> Result<Document> {
+        self.store.get_document(id)
     }
 
-    pub fn emit(&self, _id: DocumentId, _format: Format) -> Result<String> {
-        Err(Error::NotImplemented("emit"))
+    pub fn emit(&self, id: DocumentId, format: Format) -> Result<String> {
+        let document = self.get_document(id)?;
+
+        match format {
+            Format::Markdown => Ok(emitters::markdown::emit_markdown(&document)),
+            Format::Html => Err(Error::NotImplemented(
+                "html emit is not implemented in Phase 2; use --format markdown",
+            )),
+            Format::PlainText => Err(Error::NotImplemented(
+                "plain-text emit is not implemented in Phase 2; use --format markdown",
+            )),
+        }
     }
 
     pub fn context_window(&self, _query: &str, _token_budget: usize) -> Result<String> {
-        Err(Error::NotImplemented("context_window"))
+        Err(Error::NotImplemented(
+            "context_window is not implemented in Phase 2 (markdown ingest/emit only)",
+        ))
     }
 
     pub fn store(&self) -> &S {
