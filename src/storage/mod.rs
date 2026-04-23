@@ -9,4 +9,5 @@ pub trait DocumentStore {
     fn get_chunks_by_document(&self, id: DocumentId) -> Result<Vec<Chunk>>;
 }
 
+pub mod memory;
 pub mod sqlite;
