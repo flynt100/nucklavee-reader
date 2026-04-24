@@ -46,9 +46,9 @@ pub struct DocumentMeta {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Frontmatter {
-    /// Exact source slice for the leading frontmatter block, including
-    /// delimiters and original newlines.
-    pub raw: String,
+    /// YAML payload from a leading markdown frontmatter block, excluding
+    /// opening/closing `---` delimiters and normalized to `\n` line endings.
+    pub yaml: String,
 }
 
 pub type DocumentId = Uuid;

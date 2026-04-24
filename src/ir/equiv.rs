@@ -34,8 +34,9 @@ pub fn structural_diff(a: &Document, b: &Document) -> Option<String> {
             a.meta.format, b.meta.format
         ));
     }
-    if a.meta.frontmatter.as_ref().map(|f| &f.raw) != b.meta.frontmatter.as_ref().map(|f| &f.raw) {
-        return Some("frontmatter raw mismatch".to_string());
+    if a.meta.frontmatter.as_ref().map(|f| &f.yaml) != b.meta.frontmatter.as_ref().map(|f| &f.yaml)
+    {
+        return Some("frontmatter YAML mismatch".to_string());
     }
     diff_nodes(&a.body, &b.body, "body")
 }

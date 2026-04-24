@@ -128,6 +128,11 @@ fn roundtrip_callout_blockquote_fixture() {
 }
 
 #[test]
+fn roundtrip_frontmatter_nested_yaml() {
+    roundtrip("13_frontmatter_nested_yaml.md");
+}
+
+#[test]
 fn title_extraction_uses_first_h1() {
     let (_, source) = load_fixture("06_headings.md");
     let doc = parse_markdown(&source, opts());
@@ -237,7 +242,10 @@ fn callout_blockquote_fixture_has_stable_golden_output_and_structure() {
     let emitted = emit_markdown(&doc);
 
     let expected = "# Callout Blockquote Fixture\n\n> [!note] Release Notes\n> First quoted line with **bold** and `inline code`.\n> Second quoted line with a [link](https://example.com/docs).\n> Third quoted line with *emphasis* and [[wikilink-like]] text.";
-    assert_eq!(emitted, expected, "golden markdown output changed unexpectedly");
+    assert_eq!(
+        emitted, expected,
+        "golden markdown output changed unexpectedly"
+    );
 
     let reparsed = parse_markdown(&emitted, opts());
     if let Some(diff) = structural_diff(&doc, &reparsed) {
@@ -266,12 +274,10 @@ fn callout_blockquote_fixture_has_stable_golden_output_and_structure() {
     );
 
     let line_break_count = match &quote[0].block {
-        nucklavee::Block::Paragraph { content } => {
-            content
-                .iter()
-                .filter(|inline| matches!(inline, nucklavee::Inline::Text(s) if s == "\n"))
-                .count()
-        }
+        nucklavee::Block::Paragraph { content } => content
+            .iter()
+            .filter(|inline| matches!(inline, nucklavee::Inline::Text(s) if s == "\n"))
+            .count(),
         _ => 0,
     };
     assert!(
@@ -285,7 +291,7 @@ fn frontmatter_is_captured_and_not_treated_as_body() {
     let (_, source) = load_fixture("10_frontmatter.md");
     let doc = parse_markdown(&source, opts());
     let frontmatter = doc.meta.frontmatter.as_ref().expect("expected frontmatter");
-    assert!(frontmatter.raw.starts_with("---\n"));
+    let yaml = &frontmatter.yaml;
     assert!(
         matches!(
             doc.body.first().map(|n| &n.block),
@@ -295,21 +301,18 @@ fn frontmatter_is_captured_and_not_treated_as_body() {
         doc.body.first().map(|n| &n.block)
     );
 
+    assert!(yaml.contains("tags:"), "expected tags key");
     assert!(
-        frontmatter.raw.contains("tags:"),
-        "expected tags key in raw frontmatter"
+        yaml.contains("published: true"),
+        "expected boolean key in frontmatter"
     );
     assert!(
-        frontmatter.raw.contains("published: true"),
-        "expected boolean key in raw frontmatter"
+        yaml.contains("date: 2026-04-24"),
+        "expected date key in frontmatter"
     );
     assert!(
-        frontmatter.raw.contains("date: 2026-04-24"),
-        "expected date key in raw frontmatter"
-    );
-    assert!(
-        frontmatter.raw.contains("\"[[Nucklavee Reader]]\""),
-        "expected Obsidian wikilink-style string in frontmatter"
+        yaml.contains("\"[[Nucklavee Reader]]\""),
+        "expected Obsidian wikilink-style string in frontmatter aliases"
     );
 }
 

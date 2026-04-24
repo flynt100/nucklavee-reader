@@ -189,19 +189,25 @@ fn extract_frontmatter(input: &str) -> (Option<Frontmatter>, usize) {
     let Some((first_line, mut offset)) = read_line(input, 0) else {
         return (None, 0);
     };
-    if first_line != "---" {
+    if !is_frontmatter_delimiter(first_line) {
         return (None, 0);
     }
 
+    let yaml_start = offset;
     while let Some((line, next_offset)) = read_line(input, offset) {
-        if line == "---" {
-            let raw = input[..next_offset].to_string();
-            return (Some(Frontmatter { raw }), next_offset);
+        if is_frontmatter_delimiter(line) {
+            let yaml_slice = &input[yaml_start..offset];
+            let yaml = yaml_slice.replace("\r\n", "\n");
+            return (Some(Frontmatter { yaml }), next_offset);
         }
         offset = next_offset;
     }
 
     (None, 0)
+}
+
+fn is_frontmatter_delimiter(line: &str) -> bool {
+    line.trim_end_matches('\r') == "---"
 }
 
 fn read_line(input: &str, offset: usize) -> Option<(&str, usize)> {
