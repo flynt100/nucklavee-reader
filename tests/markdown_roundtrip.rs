@@ -128,8 +128,13 @@ fn roundtrip_callout_blockquote_fixture() {
 }
 
 #[test]
+<<<<<<< codex/implement-frontmatter-pre-parse-step
+fn roundtrip_frontmatter_nested_yaml() {
+    roundtrip("13_frontmatter_nested_yaml.md");
+=======
 fn roundtrip_syntax_preservation_fixture() {
     roundtrip("13_syntax_preservation.md");
+>>>>>>> main
 }
 
 #[test]
@@ -296,7 +301,7 @@ fn frontmatter_is_captured_and_not_treated_as_body() {
     let (_, source) = load_fixture("10_frontmatter.md");
     let doc = parse_markdown(&source, opts());
     let frontmatter = doc.meta.frontmatter.as_ref().expect("expected frontmatter");
-    assert!(frontmatter.raw.starts_with("---\n"));
+    let yaml = &frontmatter.yaml;
     assert!(
         matches!(
             doc.body.first().map(|n| &n.block),
@@ -306,21 +311,18 @@ fn frontmatter_is_captured_and_not_treated_as_body() {
         doc.body.first().map(|n| &n.block)
     );
 
+    assert!(yaml.contains("tags:"), "expected tags key");
     assert!(
-        frontmatter.raw.contains("tags:"),
-        "expected tags key in raw frontmatter"
+        yaml.contains("published: true"),
+        "expected boolean key in frontmatter"
     );
     assert!(
-        frontmatter.raw.contains("published: true"),
-        "expected boolean key in raw frontmatter"
+        yaml.contains("date: 2026-04-24"),
+        "expected date key in frontmatter"
     );
     assert!(
-        frontmatter.raw.contains("date: 2026-04-24"),
-        "expected date key in raw frontmatter"
-    );
-    assert!(
-        frontmatter.raw.contains("\"[[Nucklavee Reader]]\""),
-        "expected Obsidian wikilink-style string in frontmatter"
+        yaml.contains("\"[[Nucklavee Reader]]\""),
+        "expected Obsidian wikilink-style string in frontmatter aliases"
     );
 }
 

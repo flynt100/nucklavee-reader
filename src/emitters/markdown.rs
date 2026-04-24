@@ -28,13 +28,26 @@ impl Emitter for MarkdownEmitter {
 pub fn emit_markdown(document: &Document) -> String {
     let mut out = String::new();
     if let Some(frontmatter) = &document.meta.frontmatter {
-        out.push_str(&frontmatter.raw);
+        out.push_str(&format_frontmatter(frontmatter));
         if !document.body.is_empty() && !out.ends_with('\n') {
             out.push('\n');
         }
     }
     emit_blocks(&document.body, &mut out);
     out
+}
+
+fn format_frontmatter(frontmatter: &crate::ir::Frontmatter) -> String {
+    let mut yaml = frontmatter
+        .yaml
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !yaml.ends_with('\n') {
+        yaml.push('\n');
+    }
+    format!("---\n{yaml}---\n")
 }
 
 fn emit_blocks(nodes: &[BlockNode], out: &mut String) {
@@ -386,7 +399,7 @@ mod tests {
             p(id),
         )]);
         doc.meta.frontmatter = Some(Frontmatter {
-            raw: "---\na: 1\n---\n".to_string(),
+            yaml: "a: 1\n".to_string(),
         });
         assert_eq!(emit_markdown(&doc), "---\na: 1\n---\nbody");
     }
