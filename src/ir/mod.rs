@@ -17,7 +17,7 @@ pub use equiv::{structural_diff, structurally_equivalent};
 pub use normalize::normalize_document;
 pub use provenance::{ByteRange, Provenance};
 pub use types::{
-    Block, BlockNode, Document, DocumentId, DocumentMeta, Inline, ListItem, Source, SourceFormat,
-    SourceInfo, Style,
+    Block, BlockNode, Document, DocumentId, DocumentMeta, Frontmatter, Inline, ListItem, Source,
+    SourceFormat, SourceInfo, Style,
 };
 pub use validate::{ValidationError, validate};

@@ -17,6 +17,7 @@ fn bare_doc(body: Vec<BlockNode>) -> Document {
             },
             format: SourceFormat::Markdown,
             title: None,
+            frontmatter: None,
             ingested_at: Utc::now(),
             content_hash: String::new(),
         },

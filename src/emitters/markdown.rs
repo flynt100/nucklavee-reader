@@ -27,6 +27,12 @@ impl Emitter for MarkdownEmitter {
 
 pub fn emit_markdown(document: &Document) -> String {
     let mut out = String::new();
+    if let Some(frontmatter) = &document.meta.frontmatter {
+        out.push_str(&frontmatter.raw);
+        if !document.body.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+    }
     emit_blocks(&document.body, &mut out);
     out
 }
@@ -275,7 +281,7 @@ fn escape_text(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{BlockNode, DocumentMeta, Provenance, SourceFormat, SourceInfo};
+    use crate::ir::{BlockNode, DocumentMeta, Frontmatter, Provenance, SourceFormat, SourceInfo};
     use chrono::Utc;
     use uuid::Uuid;
 
@@ -288,6 +294,7 @@ mod tests {
                 },
                 format: SourceFormat::Markdown,
                 title: None,
+                frontmatter: None,
                 ingested_at: Utc::now(),
                 content_hash: String::new(),
             },
@@ -329,5 +336,20 @@ mod tests {
         let body = vec![BlockNode::new(Block::ThematicBreak, p(id))];
         let doc = doc_from_blocks(body);
         assert_eq!(emit_markdown(&doc), "---");
+    }
+
+    #[test]
+    fn preserves_frontmatter_raw_before_body() {
+        let id = Uuid::nil();
+        let mut doc = doc_from_blocks(vec![BlockNode::new(
+            Block::Paragraph {
+                content: vec![Inline::Text("body".into())],
+            },
+            p(id),
+        )]);
+        doc.meta.frontmatter = Some(Frontmatter {
+            raw: "---\na: 1\n---\n".to_string(),
+        });
+        assert_eq!(emit_markdown(&doc), "---\na: 1\n---\nbody");
     }
 }
