@@ -264,10 +264,45 @@ fn longest_backtick_run(s: &str) -> usize {
 
 fn escape_text(s: &str) -> String {
     // Escape inline markdown punctuation that can unintentionally restyle text.
-    // Keep bracket and angle characters literal so syntax-like text such as
-    // wikilinks (`[[target]]`) or callout labels (`[!note]`) is preserved.
+    // Preserve syntax-like spans used in plain text (wikilinks, callout labels,
+    // and inline-math-like `$...$` content) so they are not over-escaped.
     let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
+    let mut i = 0usize;
+
+    while i < s.len() {
+        let rest = &s[i..];
+
+        // Preserve Obsidian-style wikilinks as-is.
+        if let Some(tail) = rest.strip_prefix("[[") {
+            if let Some(close) = tail.find("]]") {
+                let end = i + 2 + close + 2;
+                out.push_str(&s[i..end]);
+                i = end;
+                continue;
+            }
+        }
+
+        // Preserve callout labels like `[!abstract]` as-is.
+        if let Some(tail) = rest.strip_prefix("[!") {
+            if let Some(close) = tail.find(']') {
+                let end = i + 2 + close + 1;
+                out.push_str(&s[i..end]);
+                i = end;
+                continue;
+            }
+        }
+
+        // Preserve inline-math-like `$...$` spans as-is.
+        if let Some(tail) = rest.strip_prefix('$') {
+            if let Some(close) = tail.find('$') {
+                let end = i + 1 + close + 1;
+                out.push_str(&s[i..end]);
+                i = end;
+                continue;
+            }
+        }
+
+        let ch = rest.chars().next().expect("slice is non-empty");
         match ch {
             '\\' | '`' | '*' | '_' | '~' => {
                 out.push('\\');
@@ -275,7 +310,9 @@ fn escape_text(s: &str) -> String {
             }
             _ => out.push(ch),
         }
+        i += ch.len_utf8();
     }
+
     out
 }
 
