@@ -108,10 +108,10 @@ where
         match format {
             Format::Markdown => Ok(emitters::markdown::emit_markdown(&document)),
             Format::Html => Err(Error::NotImplemented(
-                "html emit is not implemented in Phase 2; use --format markdown",
+                "unsupported format 'html'. supported: markdown",
             )),
             Format::PlainText => Err(Error::NotImplemented(
-                "plain-text emit is not implemented in Phase 2; use --format markdown",
+                "unsupported format 'text'. supported: markdown",
             )),
         }
     }

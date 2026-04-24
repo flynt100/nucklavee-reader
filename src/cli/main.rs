@@ -147,8 +147,6 @@ fn run_ingest_emit(
 fn parse_format(raw: &str) -> Result<Format> {
     match raw {
         "markdown" => Ok(Format::Markdown),
-        "html" => Ok(Format::Html),
-        "text" | "plain" | "plaintext" => Ok(Format::PlainText),
         _ => Err(nucklavee::Error::InvalidInput(format!(
             "unsupported format '{raw}'. supported: markdown"
         ))),
