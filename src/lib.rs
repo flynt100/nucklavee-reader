@@ -14,8 +14,7 @@ pub use chunking::Chunk;
 pub use ir::{
     Block, BlockNode, ByteRange, Diagnostic, DiagnosticKind, Document, DocumentId, DocumentMeta,
     Frontmatter, Inline, ListItem, Provenance, Source, SourceFormat, SourceInfo, Style,
-    ValidationError,
-    normalize_document, structural_diff, structurally_equivalent, validate,
+    ValidationError, normalize_document, structural_diff, structurally_equivalent, validate,
 };
 
 /// Primary API entrypoint for document ingestion and retrieval.
