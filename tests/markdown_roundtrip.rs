@@ -133,6 +133,62 @@ fn provenance_ranges_are_in_bounds() {
     walk_ranges(&doc, source.len());
 }
 
+fn assert_deterministic_parse_emit(label: &str, source: &str, iterations: usize) {
+    assert!(iterations > 0, "iterations must be > 0");
+
+    let mut current_doc = parse_markdown(source, opts());
+    let mut baseline_emitted: Option<String> = None;
+    let mut baseline_diff: Option<Option<String>> = None;
+
+    for i in 0..iterations {
+        let emitted = emit_markdown(&current_doc);
+        let reparsed = parse_markdown(&emitted, opts());
+        let diff = structural_diff(&current_doc, &reparsed);
+
+        if let Some(expected) = &baseline_emitted {
+            assert_eq!(
+                &emitted, expected,
+                "{label}: emitted markdown diverged at iteration {i}"
+            );
+        } else {
+            baseline_emitted = Some(emitted.clone());
+        }
+
+        if let Some(expected) = &baseline_diff {
+            assert_eq!(
+                &diff, expected,
+                "{label}: structural_diff diverged at iteration {i}"
+            );
+        } else {
+            baseline_diff = Some(diff.clone());
+        }
+
+        assert!(
+            validate(&reparsed, Some(emitted.len())).is_ok(),
+            "{label}: reparsed document failed validation at iteration {i}"
+        );
+
+        current_doc = reparsed;
+    }
+}
+
+#[test]
+fn parse_emit_is_deterministic_for_nested_lists_and_tables_fixture() {
+    let (label, source) = load_fixture("08_hard.md");
+    assert_deterministic_parse_emit(&label, &source, 5);
+}
+
+#[test]
+fn parse_emit_is_deterministic_for_diagnostics_fixture() {
+    let (label, source) = load_fixture("09_diagnostics.md");
+    let initial = parse_markdown(&source, opts());
+    assert!(
+        !initial.diagnostics.is_empty(),
+        "expected diagnostics fixture to produce diagnostics"
+    );
+    assert_deterministic_parse_emit(&label, &source, 5);
+}
+
 fn walk_ranges(doc: &Document, source_len: usize) {
     use nucklavee::{Block, BlockNode};
 
