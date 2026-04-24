@@ -57,7 +57,7 @@ fn main() -> ExitCode {
 #[command(name = "nucklavee")]
 #[command(
     about = "nucklavee Phase-2 CLI",
-    long_about = "Phase 2 uses an in-memory store. IDs returned by `ingest` are only guaranteed within the same process invocation. Use `ingest-emit` for one-shot ingest + emit."
+    long_about = "Phase 2 supports retrieval through `ingest-emit` only. Standalone `emit --id` is disabled because IDs are process-local with the in-memory store."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -66,12 +66,17 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    #[command(about = "Ingest a markdown file and print its in-memory document ID (same process only)")]
+    #[command(
+        about = "Ingest a markdown file and print its in-memory document ID (same process only)"
+    )]
     Ingest {
         #[arg(help = "Path to a local .md file")]
         path: String,
     },
-    #[command(about = "Emit by in-memory document ID from the current process only")]
+    #[command(
+        hide = true,
+        about = "Legacy Phase-2 command: emit by in-memory document ID (disabled)"
+    )]
     Emit {
         #[arg(long)]
         id: DocumentId,
@@ -97,7 +102,9 @@ fn run_phase2_service(
 ) -> Result<()> {
     match command {
         Commands::Ingest { path } => run_ingest(lib, &path),
-        Commands::Emit { id, format } => run_emit(lib, id, format),
+        Commands::Emit { id: _, format: _ } => Err(nucklavee::Error::InvalidInput(
+            "emit --id is disabled in Phase 2 because document IDs are process-local. use `ingest-emit <path> --format markdown`".into(),
+        )),
         Commands::IngestEmit { path, format } => run_ingest_emit(lib, &path, format),
         Commands::Query => Err(nucklavee::Error::NotImplemented(
             "query is not implemented in Phase 2 (markdown ingest/emit only)",
@@ -120,16 +127,6 @@ fn run_ingest(
 ) -> Result<()> {
     let id = lib.ingest(Source::File(path.into()))?;
     println!("{id}");
-    Ok(())
-}
-
-fn run_emit(
-    lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
-    id: DocumentId,
-    format: Format,
-) -> Result<()> {
-    let output = lib.emit(id, format)?;
-    println!("{output}");
     Ok(())
 }
 
