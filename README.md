@@ -81,6 +81,24 @@ cargo test
 cargo run --bin nucklavee
 ```
 
+### Phase-2 CLI usage (important)
+
+The current Phase-2 CLI keeps documents in an in-memory store inside one process.
+That means:
+
+- `ingest` prints an ID that is only guaranteed for that same process invocation.
+- Running `ingest` and `emit` as separate `cargo run ...` commands can fail because
+  they do not share state.
+
+Use the one-shot command for reliable behavior:
+
+```bash
+cargo run --bin nucklavee -- ingest-emit ./fixtures/sample.md --format markdown
+```
+
+If you do need separate operations, they must happen within one long-lived process
+that shares the same in-memory `Library` instance.
+
 ## Reference Spec
 
 - `nucklavee-spec.md` (source of truth for scope and behavior)

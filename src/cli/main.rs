@@ -55,7 +55,10 @@ fn main() -> ExitCode {
 
 #[derive(Debug, Parser)]
 #[command(name = "nucklavee")]
-#[command(about = "nucklavee Phase-2 CLI", long_about = None)]
+#[command(
+    about = "nucklavee Phase-2 CLI",
+    long_about = "Phase 2 uses an in-memory store. IDs returned by `ingest` are only guaranteed within the same process invocation. Use `ingest-emit` for one-shot ingest + emit."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -63,13 +66,23 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    #[command(about = "Ingest a markdown file and print its in-memory document ID (same process only)")]
     Ingest {
+        #[arg(help = "Path to a local .md file")]
         path: String,
     },
+    #[command(about = "Emit by in-memory document ID from the current process only")]
     Emit {
         #[arg(long)]
         id: DocumentId,
         #[arg(long, value_parser = parse_format)]
+        format: Format,
+    },
+    #[command(about = "Ingest and immediately emit in one process (recommended for Phase 2)")]
+    IngestEmit {
+        #[arg(help = "Path to a local .md file")]
+        path: String,
+        #[arg(long, value_parser = parse_format, default_value = "markdown")]
         format: Format,
     },
     Query,
@@ -85,6 +98,7 @@ fn run_phase2_service(
     match command {
         Commands::Ingest { path } => run_ingest(lib, &path),
         Commands::Emit { id, format } => run_emit(lib, id, format),
+        Commands::IngestEmit { path, format } => run_ingest_emit(lib, &path, format),
         Commands::Query => Err(nucklavee::Error::NotImplemented(
             "query is not implemented in Phase 2 (markdown ingest/emit only)",
         )),
@@ -114,6 +128,17 @@ fn run_emit(
     id: DocumentId,
     format: Format,
 ) -> Result<()> {
+    let output = lib.emit(id, format)?;
+    println!("{output}");
+    Ok(())
+}
+
+fn run_ingest_emit(
+    lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
+    path: &str,
+    format: Format,
+) -> Result<()> {
+    let id = lib.ingest(Source::File(path.into()))?;
     let output = lib.emit(id, format)?;
     println!("{output}");
     Ok(())
