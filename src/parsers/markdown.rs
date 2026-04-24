@@ -72,7 +72,6 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
-
     let parser = CmarkParser::new_ext(body_input, options);
 
     let mut stack: Vec<Frame> = vec![Frame::Document];
@@ -100,9 +99,12 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 &mut stack,
                 &mut top_body,
                 &mut diagnostics,
-                range,
+                range.clone(),
                 id,
-                Inline::Text(s.into_string()),
+                Inline::Text(restore_escaped_math_brackets(
+                    s.into_string(),
+                    &input[range.clone()],
+                )),
             ),
             Event::Code(s) => push_inline(
                 &mut stack,
@@ -237,6 +239,16 @@ fn read_line(input: &str, offset: usize) -> Option<(&str, usize)> {
 }
 
 // --- frames ------------------------------------------------------------
+
+fn restore_escaped_math_brackets(parsed_text: String, source_slice: &str) -> String {
+    if source_slice == "\\[" && parsed_text == "[" {
+        return "\\[".to_string();
+    }
+    if source_slice == "\\]" && parsed_text == "]" {
+        return "\\]".to_string();
+    }
+    parsed_text
+}
 
 enum Frame {
     Document,

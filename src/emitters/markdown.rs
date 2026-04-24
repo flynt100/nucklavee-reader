@@ -75,7 +75,9 @@ fn emit_block(block: &Block, out: &mut String) {
             emit_inlines(content, out);
         }
         Block::Paragraph { content } => {
-            emit_inlines(content, out);
+            if !emit_display_math_paragraph(content, out) {
+                emit_inlines(content, out);
+            }
         }
         Block::CodeBlock { language, content } => {
             out.push_str("```");
@@ -201,9 +203,86 @@ fn escape_table_cell(s: &str) -> String {
 }
 
 fn emit_inlines(inlines: &[Inline], out: &mut String) {
-    for inline in inlines {
-        emit_inline(inline, out);
+    let mut i = 0usize;
+    while i < inlines.len() {
+        if let Some((consumed, math_span)) = collect_math_bracket_span(&inlines[i..]) {
+            out.push_str(&math_span);
+            i += consumed;
+            continue;
+        }
+        emit_inline(&inlines[i], out);
+        i += 1;
     }
+}
+
+fn collect_math_bracket_span(inlines: &[Inline]) -> Option<(usize, String)> {
+    if !matches!(inlines.first(), Some(Inline::Text(s)) if s.trim() == "[") {
+        return None;
+    }
+
+    let mut inner = String::new();
+    let mut idx = 1usize;
+    while idx < inlines.len() {
+        match &inlines[idx] {
+            Inline::Text(s) if s.trim() == "]" => {
+                let trimmed = inner.trim();
+                let looks_mathy = trimmed.contains('\\')
+                    || trimmed.contains('=')
+                    || trimmed.contains('^')
+                    || trimmed.contains('_')
+                    || trimmed.contains('{')
+                    || trimmed.contains('}');
+                if !looks_mathy || trimmed.is_empty() {
+                    return None;
+                }
+                return Some((idx + 1, format!("\\[ {trimmed} \\]")));
+            }
+            Inline::Text(s) => inner.push_str(s),
+            Inline::LineBreak => inner.push('\n'),
+            _ => return None,
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn emit_display_math_paragraph(content: &[Inline], out: &mut String) -> bool {
+    let mut flat = String::new();
+    for inline in content {
+        match inline {
+            Inline::Text(s) => flat.push_str(s),
+            Inline::LineBreak => flat.push('\n'),
+            _ => return false,
+        }
+    }
+
+    let trimmed = flat.trim();
+    if !(trimmed.starts_with('[') && trimmed.ends_with(']')) {
+        return false;
+    }
+
+    let inner = trimmed
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .trim();
+    if inner.is_empty() {
+        return false;
+    }
+
+    let looks_mathy = inner.contains('\\')
+        || inner.contains('=')
+        || inner.contains('^')
+        || inner.contains('_')
+        || inner.contains('{')
+        || inner.contains('}');
+    if !looks_mathy {
+        return false;
+    }
+
+    out.push_str("\\[ ");
+    out.push_str(inner);
+    out.push_str(" \\]");
+    true
 }
 
 fn emit_inline(inline: &Inline, out: &mut String) {
@@ -312,6 +391,37 @@ fn escape_text(s: &str) -> String {
                 out.push_str(&s[i..end]);
                 i = end;
                 continue;
+            }
+        }
+
+        // Preserve display-math-like `\\[ ... \\]` spans as-is.
+        if let Some(tail) = rest.strip_prefix("\\[") {
+            if let Some(close) = tail.find("\\]") {
+                let end = i + 2 + close + 2;
+                out.push_str(&s[i..end]);
+                i = end;
+                continue;
+            }
+        }
+
+        // Promote math-like bracket spans to escaped display delimiters so
+        // parse->emit preserves `\\[ ... \\]` intent.
+        if let Some(tail) = rest.strip_prefix('[') {
+            if let Some(close) = tail.find(']') {
+                let inner = &tail[..close];
+                let looks_mathy = inner.contains('\\')
+                    || inner.contains('=')
+                    || inner.contains('^')
+                    || inner.contains('_')
+                    || inner.contains('{')
+                    || inner.contains('}');
+                if looks_mathy {
+                    out.push_str("\\[");
+                    out.push_str(inner);
+                    out.push_str("\\]");
+                    i += 1 + close + 1;
+                    continue;
+                }
             }
         }
 
