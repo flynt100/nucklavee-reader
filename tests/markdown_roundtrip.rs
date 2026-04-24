@@ -128,6 +128,11 @@ fn roundtrip_callout_blockquote_fixture() {
 }
 
 #[test]
+fn roundtrip_syntax_preservation_fixture() {
+    roundtrip("13_syntax_preservation.md");
+}
+
+#[test]
 fn title_extraction_uses_first_h1() {
     let (_, source) = load_fixture("06_headings.md");
     let doc = parse_markdown(&source, opts());
@@ -205,8 +210,8 @@ fn parse_emit_is_deterministic_for_diagnostics_fixture() {
 }
 
 #[test]
-fn emitted_text_preserves_wikilink_and_callout_syntax() {
-    let (_, source) = load_fixture("11_literal_syntax.md");
+fn emitted_text_preserves_wikilink_callout_and_math_syntax() {
+    let (_, source) = load_fixture("13_syntax_preservation.md");
     let doc = parse_markdown(&source, opts());
     let emitted = emit_markdown(&doc);
 
@@ -215,15 +220,20 @@ fn emitted_text_preserves_wikilink_and_callout_syntax() {
         "expected emitted markdown to preserve wikilink syntax: {emitted}"
     );
     assert!(
-        emitted.contains("> [!note]"),
+        emitted.contains("> [!abstract]"),
         "expected emitted markdown to preserve callout marker syntax: {emitted}"
     );
     assert!(
-        emitted.contains("alpha[beta], [plain bracketed text], and x < y > z."),
-        "expected emitted markdown to preserve mixed bracket and angle text: {emitted}"
+        emitted.contains("$f([x]) = x^2 + y$"),
+        "expected emitted markdown to preserve inline equation syntax: {emitted}"
     );
 
     let reparsed = parse_markdown(&emitted, opts());
+    if let Some(diff) = structural_diff(&doc, &reparsed) {
+        panic!(
+            "expected emitted markdown to preserve syntax semantics, got diff: {diff}\n--- emitted ---\n{emitted}\n--- ir1 ---\n{doc:#?}\n--- ir2 ---\n{reparsed:#?}",
+        );
+    }
     assert!(
         validate(&reparsed, Some(emitted.len())).is_ok(),
         "expected emitted markdown to remain parseable"
@@ -237,7 +247,10 @@ fn callout_blockquote_fixture_has_stable_golden_output_and_structure() {
     let emitted = emit_markdown(&doc);
 
     let expected = "# Callout Blockquote Fixture\n\n> [!note] Release Notes\n> First quoted line with **bold** and `inline code`.\n> Second quoted line with a [link](https://example.com/docs).\n> Third quoted line with *emphasis* and [[wikilink-like]] text.";
-    assert_eq!(emitted, expected, "golden markdown output changed unexpectedly");
+    assert_eq!(
+        emitted, expected,
+        "golden markdown output changed unexpectedly"
+    );
 
     let reparsed = parse_markdown(&emitted, opts());
     if let Some(diff) = structural_diff(&doc, &reparsed) {
@@ -266,12 +279,10 @@ fn callout_blockquote_fixture_has_stable_golden_output_and_structure() {
     );
 
     let line_break_count = match &quote[0].block {
-        nucklavee::Block::Paragraph { content } => {
-            content
-                .iter()
-                .filter(|inline| matches!(inline, nucklavee::Inline::Text(s) if s == "\n"))
-                .count()
-        }
+        nucklavee::Block::Paragraph { content } => content
+            .iter()
+            .filter(|inline| matches!(inline, nucklavee::Inline::Text(s) if s == "\n"))
+            .count(),
         _ => 0,
     };
     assert!(
