@@ -123,6 +123,11 @@ fn roundtrip_literal_markdown_syntax() {
 }
 
 #[test]
+fn roundtrip_callout_blockquote_fixture() {
+    roundtrip("12_callout_blockquote.md");
+}
+
+#[test]
 fn title_extraction_uses_first_h1() {
     let (_, source) = load_fixture("06_headings.md");
     let doc = parse_markdown(&source, opts());
@@ -222,6 +227,56 @@ fn emitted_text_preserves_wikilink_and_callout_syntax() {
     assert!(
         validate(&reparsed, Some(emitted.len())).is_ok(),
         "expected emitted markdown to remain parseable"
+    );
+}
+
+#[test]
+fn callout_blockquote_fixture_has_stable_golden_output_and_structure() {
+    let (_, source) = load_fixture("12_callout_blockquote.md");
+    let doc = parse_markdown(&source, opts());
+    let emitted = emit_markdown(&doc);
+
+    let expected = "# Callout Blockquote Fixture\n\n> [!note] Release Notes\n> First quoted line with **bold** and `inline code`.\n> Second quoted line with a [link](https://example.com/docs).\n> Third quoted line with *emphasis* and [[wikilink-like]] text.";
+    assert_eq!(emitted, expected, "golden markdown output changed unexpectedly");
+
+    let reparsed = parse_markdown(&emitted, opts());
+    if let Some(diff) = structural_diff(&doc, &reparsed) {
+        panic!(
+            "expected callout blockquote fixture to stay structurally equivalent after golden emission, got diff: {diff}\n--- emitted ---\n{emitted}\n--- ir1 ---\n{doc:#?}\n--- ir2 ---\n{reparsed:#?}",
+        );
+    }
+
+    let quote = doc
+        .body
+        .iter()
+        .find_map(|node| match &node.block {
+            nucklavee::Block::BlockQuote { children } => Some(children),
+            _ => None,
+        })
+        .expect("expected a blockquote block in fixture");
+
+    assert_eq!(
+        quote.len(),
+        1,
+        "expected callout-like quote content to remain a single paragraph"
+    );
+    assert!(
+        matches!(quote[0].block, nucklavee::Block::Paragraph { .. }),
+        "expected first quoted block to be a paragraph"
+    );
+
+    let line_break_count = match &quote[0].block {
+        nucklavee::Block::Paragraph { content } => {
+            content
+                .iter()
+                .filter(|inline| matches!(inline, nucklavee::Inline::Text(s) if s == "\n"))
+                .count()
+        }
+        _ => 0,
+    };
+    assert!(
+        line_break_count >= 3,
+        "expected quoted callout paragraph to preserve multiple logical lines"
     );
 }
 

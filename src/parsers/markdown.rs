@@ -112,14 +112,24 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 id,
                 Inline::Code(s.into_string()),
             ),
-            Event::SoftBreak => push_inline(
-                &mut stack,
-                &mut top_body,
-                &mut diagnostics,
-                range,
-                id,
-                Inline::Text(" ".to_string()),
-            ),
+            Event::SoftBreak => {
+                let soft_break = if in_blockquote(&stack) {
+                    // Preserve logical line boundaries in quoted content so
+                    // callout-like first-line markers and body lines survive
+                    // parser/emitter roundtrips.
+                    Inline::Text("\n".to_string())
+                } else {
+                    Inline::Text(" ".to_string())
+                };
+                push_inline(
+                    &mut stack,
+                    &mut top_body,
+                    &mut diagnostics,
+                    range,
+                    id,
+                    soft_break,
+                )
+            }
             Event::HardBreak => push_inline(
                 &mut stack,
                 &mut top_body,
@@ -677,6 +687,13 @@ fn attach_inline_checked(stack: &mut [Frame], inline: Inline) -> bool {
 
 fn attach_inline(stack: &mut [Frame], inline: Inline) {
     attach_inline_checked(stack, inline);
+}
+
+fn in_blockquote(stack: &[Frame]) -> bool {
+    stack
+        .iter()
+        .rev()
+        .any(|frame| matches!(frame, Frame::BlockQuote { .. }))
 }
 
 fn append_block(stack: &mut [Frame], top_body: &mut Vec<BlockNode>, node: BlockNode) {
