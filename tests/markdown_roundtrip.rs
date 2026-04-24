@@ -118,6 +118,11 @@ fn roundtrip_frontmatter() {
 }
 
 #[test]
+fn roundtrip_literal_markdown_syntax() {
+    roundtrip("11_literal_syntax.md");
+}
+
+#[test]
 fn title_extraction_uses_first_h1() {
     let (_, source) = load_fixture("06_headings.md");
     let doc = parse_markdown(&source, opts());
@@ -195,17 +200,42 @@ fn parse_emit_is_deterministic_for_diagnostics_fixture() {
 }
 
 #[test]
+fn emitted_text_preserves_wikilink_and_callout_syntax() {
+    let (_, source) = load_fixture("11_literal_syntax.md");
+    let doc = parse_markdown(&source, opts());
+    let emitted = emit_markdown(&doc);
+
+    assert!(
+        emitted.contains("[[wikilink]]"),
+        "expected emitted markdown to preserve wikilink syntax: {emitted}"
+    );
+    assert!(
+        emitted.contains("> [!note]"),
+        "expected emitted markdown to preserve callout marker syntax: {emitted}"
+    );
+    assert!(
+        emitted.contains("alpha[beta], [plain bracketed text], and x < y > z."),
+        "expected emitted markdown to preserve mixed bracket and angle text: {emitted}"
+    );
+
+    let reparsed = parse_markdown(&emitted, opts());
+    assert!(
+        validate(&reparsed, Some(emitted.len())).is_ok(),
+        "expected emitted markdown to remain parseable"
+    );
+}
+
+#[test]
 fn frontmatter_is_captured_and_not_treated_as_body() {
     let (_, source) = load_fixture("10_frontmatter.md");
     let doc = parse_markdown(&source, opts());
-    let frontmatter = doc
-        .meta
-        .frontmatter
-        .as_ref()
-        .expect("expected frontmatter");
+    let frontmatter = doc.meta.frontmatter.as_ref().expect("expected frontmatter");
     assert!(frontmatter.raw.starts_with("---\n"));
     assert!(
-        matches!(doc.body.first().map(|n| &n.block), Some(nucklavee::Block::Heading { .. })),
+        matches!(
+            doc.body.first().map(|n| &n.block),
+            Some(nucklavee::Block::Heading { .. })
+        ),
         "expected first body block to be heading, got {:?}",
         doc.body.first().map(|n| &n.block)
     );

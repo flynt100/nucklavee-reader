@@ -263,12 +263,13 @@ fn longest_backtick_run(s: &str) -> usize {
 }
 
 fn escape_text(s: &str) -> String {
-    // Escape a conservative set of Markdown active characters in text runs.
-    // Over-escaping is safe for roundtrip because the parser strips escapes.
+    // Escape inline markdown punctuation that can unintentionally restyle text.
+    // Keep bracket and angle characters literal so syntax-like text such as
+    // wikilinks (`[[target]]`) or callout labels (`[!note]`) is preserved.
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
         match ch {
-            '\\' | '`' | '*' | '_' | '[' | ']' | '<' | '>' | '~' => {
+            '\\' | '`' | '*' | '_' | '~' => {
                 out.push('\\');
                 out.push(ch);
             }
