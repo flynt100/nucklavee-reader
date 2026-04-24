@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::Result;
 use crate::ir::{
     Block, BlockNode, ByteRange, Diagnostic, DiagnosticKind, Document, DocumentId, DocumentMeta,
-    Inline, ListItem, Provenance, SourceFormat, SourceInfo, Style,
+    Frontmatter, Inline, ListItem, Provenance, SourceFormat, SourceInfo, Style,
 };
 use crate::parsers::Parser;
 
@@ -50,6 +50,9 @@ pub struct ParseOptions {
 /// Parse a markdown string into a [`Document`]. Never fails — unsupported
 /// constructs produce diagnostics.
 pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
+    let (frontmatter, frontmatter_len) = extract_frontmatter(input);
+    let body_input = &input[frontmatter_len..];
+
     let id: DocumentId = Uuid::new_v4();
     let meta = DocumentMeta {
         id,
@@ -60,6 +63,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
         },
         format: SourceFormat::Markdown,
         title: None,
+        frontmatter,
         ingested_at: Utc::now(),
         content_hash: sha256_hex(input),
     };
@@ -69,7 +73,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
 
-    let parser = CmarkParser::new_ext(input, options);
+    let parser = CmarkParser::new_ext(body_input, options);
 
     let mut stack: Vec<Frame> = vec![Frame::Document];
     let mut top_body: Vec<BlockNode> = Vec::new();
@@ -79,6 +83,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut heading_levels: Vec<u8> = Vec::new();
 
     for (event, range) in parser.into_offset_iter() {
+        let range = (range.start + frontmatter_len)..(range.end + frontmatter_len);
         match event {
             Event::Start(tag) => start_tag(tag, range, &mut stack),
             Event::End(end) => end_tag(
@@ -165,6 +170,54 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     doc.meta.title = extract_title(&doc.body);
     doc.diagnostics = diagnostics;
     doc
+}
+
+fn extract_frontmatter(input: &str) -> (Option<Frontmatter>, usize) {
+    if !input.starts_with("---") {
+        return (None, 0);
+    }
+    let Some((first_line, mut offset)) = read_line(input, 0) else {
+        return (None, 0);
+    };
+    if first_line != "---" {
+        return (None, 0);
+    }
+
+    while let Some((line, next_offset)) = read_line(input, offset) {
+        if line == "---" {
+            let raw = input[..next_offset].to_string();
+            return (Some(Frontmatter { raw }), next_offset);
+        }
+        offset = next_offset;
+    }
+
+    (None, 0)
+}
+
+fn read_line(input: &str, offset: usize) -> Option<(&str, usize)> {
+    if offset > input.len() {
+        return None;
+    }
+    if offset == input.len() {
+        return None;
+    }
+    let bytes = input.as_bytes();
+    let mut i = offset;
+    while i < bytes.len() && bytes[i] != b'\n' {
+        i += 1;
+    }
+
+    let (line_end, next_offset) = if i < bytes.len() && bytes[i] == b'\n' {
+        let end = if i > offset && bytes[i - 1] == b'\r' {
+            i - 1
+        } else {
+            i
+        };
+        (end, i + 1)
+    } else {
+        (i, i)
+    };
+    Some((&input[offset..line_end], next_offset))
 }
 
 // --- frames ------------------------------------------------------------

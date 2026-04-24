@@ -113,6 +113,11 @@ fn roundtrip_hard() {
 }
 
 #[test]
+fn roundtrip_frontmatter() {
+    roundtrip("10_frontmatter.md");
+}
+
+#[test]
 fn title_extraction_uses_first_h1() {
     let (_, source) = load_fixture("06_headings.md");
     let doc = parse_markdown(&source, opts());
@@ -187,6 +192,40 @@ fn parse_emit_is_deterministic_for_diagnostics_fixture() {
         "expected diagnostics fixture to produce diagnostics"
     );
     assert_deterministic_parse_emit(&label, &source, 5);
+}
+
+#[test]
+fn frontmatter_is_captured_and_not_treated_as_body() {
+    let (_, source) = load_fixture("10_frontmatter.md");
+    let doc = parse_markdown(&source, opts());
+    let frontmatter = doc
+        .meta
+        .frontmatter
+        .as_ref()
+        .expect("expected frontmatter");
+    assert!(frontmatter.raw.starts_with("---\n"));
+    assert!(
+        matches!(doc.body.first().map(|n| &n.block), Some(nucklavee::Block::Heading { .. })),
+        "expected first body block to be heading, got {:?}",
+        doc.body.first().map(|n| &n.block)
+    );
+
+    assert!(
+        frontmatter.raw.contains("tags:"),
+        "expected tags key in raw frontmatter"
+    );
+    assert!(
+        frontmatter.raw.contains("published: true"),
+        "expected boolean key in raw frontmatter"
+    );
+    assert!(
+        frontmatter.raw.contains("date: 2026-04-24"),
+        "expected date key in raw frontmatter"
+    );
+    assert!(
+        frontmatter.raw.contains("\"[[Nucklavee Reader]]\""),
+        "expected Obsidian wikilink-style string in frontmatter"
+    );
 }
 
 fn walk_ranges(doc: &Document, source_len: usize) {

@@ -39,8 +39,16 @@ pub struct DocumentMeta {
     pub source: SourceInfo,
     pub format: SourceFormat,
     pub title: Option<String>,
+    pub frontmatter: Option<Frontmatter>,
     pub ingested_at: DateTime<Utc>,
     pub content_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Frontmatter {
+    /// Exact source slice for the leading frontmatter block, including
+    /// delimiters and original newlines.
+    pub raw: String,
 }
 
 pub type DocumentId = Uuid;
