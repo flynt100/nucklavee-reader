@@ -96,6 +96,10 @@ Use the one-shot command for reliable behavior:
 cargo run --bin nucklavee -- ingest-emit ./fixtures/sample.md --format markdown
 ```
 
+`--format` currently supports exactly: `markdown`.
+If another format is passed, the CLI/runtime error string is:
+`unsupported format '<value>'. supported: markdown`.
+
 If you do need separate operations, they must happen within one long-lived process
 that shares the same in-memory `Library` instance.
 
