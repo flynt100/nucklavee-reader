@@ -128,13 +128,18 @@ fn roundtrip_callout_blockquote_fixture() {
 }
 
 #[test]
-<<<<<<< codex/implement-frontmatter-pre-parse-step
 fn roundtrip_frontmatter_nested_yaml() {
     roundtrip("13_frontmatter_nested_yaml.md");
-=======
+}
+
+#[test]
 fn roundtrip_syntax_preservation_fixture() {
     roundtrip("13_syntax_preservation.md");
->>>>>>> main
+}
+
+#[test]
+fn roundtrip_math_delimiters_fixture() {
+    roundtrip("14_math_delimiters.md");
 }
 
 #[test]
@@ -294,6 +299,26 @@ fn callout_blockquote_fixture_has_stable_golden_output_and_structure() {
         line_break_count >= 3,
         "expected quoted callout paragraph to preserve multiple logical lines"
     );
+}
+
+#[test]
+fn math_delimiters_fixture_has_stable_golden_output_and_structure() {
+    let (_, source) = load_fixture("14_math_delimiters.md");
+    let doc = parse_markdown(&source, opts());
+    let emitted = emit_markdown(&doc);
+
+    let expected = "# Math Delimiter Fixture\n\nInline formulas stay inline: $a^2 + b^2 = c^2$, $e^{i\\pi} + 1 = 0$, and $f([x]) = x^2 + y$.\n\nDisplay equations preserve escaped delimiters:\n\n\\[ E = mc^2 \\]\n\nParagraph break between equations.\n\n\\[ \\int_0^1 x^2 , dx = \\frac{1}{3} \\]\n\nMixed inline + display math in one section: $\\alpha + \\beta$ then \\[ \\sum_{k=1}^{n} k = \\frac{n(n+1)}{2} \\]";
+    assert_eq!(
+        emitted, expected,
+        "golden markdown output changed unexpectedly for math delimiters fixture"
+    );
+
+    let reparsed = parse_markdown(&emitted, opts());
+    if let Some(diff) = structural_diff(&doc, &reparsed) {
+        panic!(
+            "expected math delimiters fixture to stay structurally equivalent after golden emission, got diff: {diff}\n--- emitted ---\n{emitted}\n--- ir1 ---\n{doc:#?}\n--- ir2 ---\n{reparsed:#?}",
+        );
+    }
 }
 
 #[test]
