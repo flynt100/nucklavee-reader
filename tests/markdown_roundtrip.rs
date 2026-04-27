@@ -46,6 +46,13 @@ fn opts() -> ParseOptions {
     ParseOptions::default()
 }
 
+fn opts_with_callout_normalization() -> ParseOptions {
+    ParseOptions {
+        normalize_bare_callouts: true,
+        ..ParseOptions::default()
+    }
+}
+
 fn roundtrip(name: &str) {
     let (label, source) = load_fixture(name);
     let doc1 = parse_markdown(&source, opts());
@@ -203,6 +210,18 @@ fn roundtrip_common_malformed_variants_fixture_expected_diagnostic() {
 }
 
 #[test]
+// Policy E: phase-2B pseudo-table conversion should roundtrip deterministically
+fn roundtrip_phase2b_tsv_like_fixture() {
+    roundtrip("18_phase2b_tsv_like.md");
+}
+
+#[test]
+// Policy E: ambiguous tabular shape should fall back with diagnostics and remain deterministic
+fn roundtrip_phase2b_malformed_tsv_fixture_expected_diagnostic() {
+    roundtrip_expected_diagnostic("19_phase2b_tsv_malformed.md");
+}
+
+#[test]
 fn title_extraction_uses_first_h1() {
     let (_, source) = load_fixture("06_headings.md");
     let doc = parse_markdown(&source, opts());
@@ -279,6 +298,21 @@ fn parse_emit_is_deterministic_for_diagnostics_fixture() {
         "expected diagnostics fixture to produce diagnostics"
     );
     assert_deterministic_parse_emit(&label, &source, 5);
+}
+
+#[test]
+// Policy E: determinism for phase-2B table fallback path
+fn parse_emit_is_deterministic_for_phase2b_fallback_fixtures() {
+    let (label_ok, source_ok) = load_fixture("18_phase2b_tsv_like.md");
+    assert_deterministic_parse_emit(&label_ok, &source_ok, 5);
+
+    let (label_bad, source_bad) = load_fixture("19_phase2b_tsv_malformed.md");
+    let initial = parse_markdown(&source_bad, opts());
+    assert!(
+        !initial.diagnostics.is_empty(),
+        "expected malformed phase-2B fixture to produce diagnostics"
+    );
+    assert_deterministic_parse_emit(&label_bad, &source_bad, 5);
 }
 
 #[test]
@@ -387,6 +421,23 @@ fn math_delimiters_fixture_has_stable_golden_output_and_structure() {
 }
 
 #[test]
+// Policy C: optional bare-callout normalization emits stable canonical output
+fn normalized_bare_callout_fixture_has_stable_output() {
+    let (_, source) = load_fixture("18_normalized_bare_callout.md");
+    let doc = parse_markdown(&source, opts_with_callout_normalization());
+    let emitted = emit_markdown(&doc);
+    let expected = "# Bare Callout Normalization Fixture\n\n> [!tip] Normalized heading\n> Second line stays in the same callout paragraph.";
+    assert_eq!(emitted, expected, "normalized callout output changed");
+
+    let reparsed = parse_markdown(&emitted, opts_with_callout_normalization());
+    if let Some(diff) = structural_diff(&doc, &reparsed) {
+        panic!(
+            "expected normalized callout fixture to stay structurally equivalent, got diff: {diff}\n--- emitted ---\n{emitted}\n--- ir1 ---\n{doc:#?}\n--- ir2 ---\n{reparsed:#?}",
+        );
+    }
+}
+
+#[test]
 // Policy D: frontmatter must be captured in metadata, not body blocks
 fn frontmatter_is_captured_and_not_treated_as_body() {
     let (_, source) = load_fixture("10_frontmatter.md");
@@ -415,6 +466,50 @@ fn frontmatter_is_captured_and_not_treated_as_body() {
         yaml.contains("\"[[Nucklavee Reader]]\""),
         "expected Obsidian wikilink-style string in frontmatter aliases"
     );
+}
+
+#[test]
+fn escaped_newline_frontmatter_is_normalized_and_captured() {
+    let (_, source) = load_fixture("18_escaped_newline_frontmatter.md");
+    let doc = parse_markdown(&source, opts());
+    let frontmatter = doc.meta.frontmatter.as_ref().expect("expected frontmatter");
+
+    assert!(
+        frontmatter.yaml.contains("title: Escaped Stream"),
+        "expected escaped-newline stream to decode into YAML frontmatter"
+    );
+    assert!(
+        doc.diagnostics.iter().any(|d| {
+            matches!(d.kind, nucklavee::DiagnosticKind::Normalized)
+                && d.message
+                    .contains("decoded escaped newline stream before markdown parse")
+        }),
+        "expected escaped-newline normalization diagnostic, got {:?}",
+        doc.diagnostics
+    );
+}
+
+#[test]
+fn unfenced_frontmatter_is_inferred_and_reported_deterministically() {
+    let (_, source) = load_fixture("19_unfenced_frontmatter_block.md");
+    let doc = parse_markdown(&source, opts());
+    let frontmatter = doc.meta.frontmatter.as_ref().expect("expected frontmatter");
+
+    assert!(
+        frontmatter.yaml.contains("author: Parser Bot"),
+        "expected inferred frontmatter to include YAML-like key/value lines"
+    );
+    assert!(
+        doc.diagnostics.iter().any(|d| {
+            matches!(d.kind, nucklavee::DiagnosticKind::Normalized)
+                && d.message
+                    .contains("inferred unfenced YAML-like frontmatter block at document start")
+        }),
+        "expected inferred-frontmatter normalization diagnostic, got {:?}",
+        doc.diagnostics
+    );
+
+    assert_deterministic_parse_emit("19_unfenced_frontmatter_block.md", &source, 5);
 }
 
 fn walk_ranges(doc: &Document, source_len: usize) {

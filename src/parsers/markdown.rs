@@ -108,7 +108,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
-    let parser = CmarkParser::new_ext(body_input, options);
+    let parser = CmarkParser::new_ext(parse_input, options);
 
     let mut stack: Vec<Frame> = vec![Frame::Document];
     let mut top_body: Vec<BlockNode> = Vec::new();
@@ -123,6 +123,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
             Event::End(end) => end_tag(
                 end,
                 range,
+                input,
                 &mut stack,
                 &mut top_body,
                 &mut section_path,
@@ -138,7 +139,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 id,
                 Inline::Text(restore_escaped_math_brackets(
                     s.into_string(),
-                    &input[range.clone()],
+                    &parse_input[(range.start - frontmatter_len)..(range.end - frontmatter_len)],
                 )),
             ),
             Event::Code(s) => push_inline(
@@ -241,6 +242,90 @@ fn extract_frontmatter(input: &str) -> (Option<Frontmatter>, usize) {
     }
 
     (None, 0)
+}
+
+struct NormalizedInput {
+    input: String,
+    diagnostics: Vec<Diagnostic>,
+}
+
+fn normalize_preparse_input(input: &str) -> NormalizedInput {
+    let mut diagnostics = Vec::new();
+    if appears_single_line_escaped_markdown(input) {
+        let decoded = decode_escaped_newlines(input);
+        if decoded != input {
+            diagnostics.push(Diagnostic::new(
+                DiagnosticKind::Normalized,
+                "decoded escaped newline stream before markdown parse",
+            ));
+            return NormalizedInput {
+                input: decoded,
+                diagnostics,
+            };
+        }
+    }
+
+    NormalizedInput {
+        input: input.to_string(),
+        diagnostics,
+    }
+}
+
+fn appears_single_line_escaped_markdown(input: &str) -> bool {
+    let trimmed = input.trim_end_matches(['\n', '\r']);
+    !trimmed.contains('\n') && trimmed.contains("\\n")
+}
+
+fn decode_escaped_newlines(input: &str) -> String {
+    input.replace("\\r\\n", "\n").replace("\\n", "\n")
+}
+
+fn infer_probable_frontmatter(input: &str) -> Option<(Frontmatter, usize)> {
+    if input.starts_with("---") {
+        return None;
+    }
+
+    let mut offset = 0usize;
+    let mut yaml_end = 0usize;
+    let mut key_value_lines = 0usize;
+    let mut saw_nonempty = false;
+
+    while let Some((line, next_offset)) = read_line(input, offset) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        saw_nonempty = true;
+        if is_probable_yaml_key_value_line(trimmed) {
+            key_value_lines += 1;
+            yaml_end = next_offset;
+            offset = next_offset;
+            continue;
+        }
+        break;
+    }
+
+    if !saw_nonempty || key_value_lines < 2 {
+        return None;
+    }
+
+    Some((
+        Frontmatter {
+            yaml: input[..yaml_end].replace("\r\n", "\n"),
+        },
+        yaml_end,
+    ))
+}
+
+fn is_probable_yaml_key_value_line(line: &str) -> bool {
+    let Some((key, _value)) = line.split_once(':') else {
+        return false;
+    };
+    if key.is_empty() {
+        return false;
+    }
+    key.chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
 }
 
 fn is_frontmatter_delimiter(line: &str) -> bool {
@@ -508,6 +593,7 @@ fn start_tag(tag: Tag<'_>, range: Range<usize>, stack: &mut Vec<Frame>) {
 fn end_tag(
     end: TagEnd,
     end_range: Range<usize>,
+    source: &str,
     stack: &mut Vec<Frame>,
     top_body: &mut Vec<BlockNode>,
     section_path: &mut Vec<String>,
@@ -553,11 +639,39 @@ fn end_tag(
             let prov = Provenance::new(doc_id)
                 .with_range(range)
                 .with_section_path(section_path.clone());
-            append_block(
-                stack,
-                top_body,
-                BlockNode::new(Block::Paragraph { content: inlines }, prov),
-            );
+            let source_slice = &source[start..end_range.end];
+            match detect_phase2b_tabular_fallback(source_slice) {
+                Some(Phase2bParagraphBlock::Table { headers, rows }) => {
+                    append_block(
+                        stack,
+                        top_body,
+                        BlockNode::new(Block::Table { headers, rows }, prov),
+                    );
+                }
+                Some(Phase2bParagraphBlock::GenericTableHint { content, message }) => {
+                    diagnostics.push(
+                        Diagnostic::new(DiagnosticKind::Lossy, message)
+                            .with_range(ByteRange::new(start, end_range.end)),
+                    );
+                    append_block(
+                        stack,
+                        top_body,
+                        BlockNode::new(
+                            Block::GenericBlock {
+                                content,
+                                hint: Some("table-like:tab-delimited".to_string()),
+                                confidence: 0.5,
+                            },
+                            prov,
+                        ),
+                    );
+                }
+                None => append_block(
+                    stack,
+                    top_body,
+                    BlockNode::new(Block::Paragraph { content: inlines }, prov),
+                ),
+            }
         }
         (
             Frame::Heading {
@@ -849,6 +963,79 @@ fn heading_level_to_u8(level: HeadingLevel) -> u8 {
         HeadingLevel::H5 => 5,
         HeadingLevel::H6 => 6,
     }
+}
+
+enum Phase2bParagraphBlock {
+    Table {
+        headers: Vec<Vec<Inline>>,
+        rows: Vec<Vec<Vec<Inline>>>,
+    },
+    GenericTableHint {
+        content: Vec<Inline>,
+        message: String,
+    },
+}
+
+fn detect_phase2b_tabular_fallback(source_slice: &str) -> Option<Phase2bParagraphBlock> {
+    let normalized = source_slice
+        .trim()
+        .trim_matches('\n')
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    let lines: Vec<&str> = normalized.lines().collect();
+    if lines.len() < 2 {
+        return None;
+    }
+
+    let mut widths: Vec<usize> = Vec::with_capacity(lines.len());
+    let mut tabbed_lines = 0usize;
+    let mut max_width = 0usize;
+    for line in &lines {
+        if line.contains('\t') {
+            tabbed_lines += 1;
+            let width = line.split('\t').count();
+            max_width = max_width.max(width);
+            widths.push(width);
+        } else {
+            widths.push(1);
+        }
+    }
+
+    if tabbed_lines < 2 || max_width < 2 {
+        return None;
+    }
+
+    let first_width = widths[0];
+    let all_rows_have_tabs = lines.iter().all(|line| line.contains('\t'));
+    let shape_consistent = first_width >= 2 && widths.iter().all(|w| *w == first_width);
+    if all_rows_have_tabs && shape_consistent {
+        let mut parsed_rows: Vec<Vec<Vec<Inline>>> = lines
+            .iter()
+            .map(|line| {
+                line.split('\t')
+                    .map(|cell| vec![Inline::Text(cell.trim().to_string())])
+                    .collect()
+            })
+            .collect();
+        let headers = parsed_rows.remove(0);
+        return Some(Phase2bParagraphBlock::Table {
+            headers,
+            rows: parsed_rows,
+        });
+    }
+
+    let mismatch_count = widths
+        .iter()
+        .filter(|w| **w != first_width && **w > 1)
+        .count();
+    if mismatch_count > 0 || !all_rows_have_tabs {
+        return Some(Phase2bParagraphBlock::GenericTableHint {
+            content: vec![Inline::Text(normalized)],
+            message: "tab-delimited table-like paragraph had inconsistent row widths; preserved as GenericBlock".to_string(),
+        });
+    }
+
+    None
 }
 
 /// Flatten inlines into a plain string (used for heading text in section paths
