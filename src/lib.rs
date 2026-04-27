@@ -81,6 +81,7 @@ where
             &markdown,
             parsers::markdown::ParseOptions {
                 source_descriptor: Some(source_descriptor),
+                ..Default::default()
             },
         );
 
