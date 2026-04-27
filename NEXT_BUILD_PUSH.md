@@ -1,99 +1,54 @@
-# Nucklavee Repo Analysis and Recommended Next Major Build Push
+# Nucklavee Next Build Push
 
-_Date analyzed: 2026-03-27_
+_As of 2026-04-27_
 
-## 1) Current implementation snapshot
+## Snapshot (current truth)
 
-The repository is in a deliberate scaffold phase:
+- **Phase 1 is complete** and its quality gate is satisfied:
+  - IR validation invariants complete and tested.
+  - Normalization + structural equivalence stable.
+  - Markdown parse->emit->parse fixtures passing.
+  - Diagnostics behavior for unsupported/lossy cases defined.
+- **Phase 2A is complete**:
+  - `MarkdownParser` implemented (`pulldown-cmark`) with tree construction.
+  - Markdown emitter implemented for semantic IR output.
+  - IR roundtrip harness in place (parse -> emit -> parse -> semantic compare).
+- **Active implementation target: Phase 2B hardening**.
 
-- Public `Library` API exists, but all core methods still return `Error::NotImplemented`.
-- IR types are present and now include a first pass of `SourceInfo` (`DocumentMeta.source: SourceInfo`) with a simple conversion from `Source`.
-- Parser/emitter/chunker/storage/vector/embedder boundaries are in place as traits/modules.
-- Concrete parser implementations (`markdown`, `html`, `pdf`) are still stubs returning not-implemented errors.
-- CLI exists but only prints a scaffold message.
+This supersedes older scaffold-era notes that described parser/emitter components as stubs.
 
-This indicates architecture-first progress with implementation still pending.
+## Active Push: Phase 2B Hardening
 
-## 2) Planned roadmap signals
+### Goal
 
-Three planning signals point to the immediate next push:
+Tighten behavior contracts and handoff boundaries around the now-complete Markdown core loop.
 
-1. README "Near-Term Implementation Order" starts with IR test/validation harness, then Markdown parser+emitter roundtrip.
-2. Week-1 TODO explicitly tracks seven IR finalization items, with item #1 done and item #2 marked as the next focus.
-3. The spec is IR-first and emphasizes provenance metadata, dedupe (`content_hash`), and strict, trustworthy structure before pipeline features.
+### Source of truth alignment
 
-## 3) Gap analysis vs plan
+This push is derived directly from:
 
-### Already aligned
+- `TODO.md` (Phase 2B checklist)
+- `docs/phase-gates.md` (Phase 1 exit criteria and blocker/warning semantics)
 
-- Core module boundaries and trait seams are correctly laid out.
-- `SourceInfo` has landed in the IR model, partially addressing Week-1 item #2.
+### Scope (Phase 2B)
 
-### Highest-impact gaps still open
+1. **Define and document acceptable normalization deltas**
+   - Explicitly codify what whitespace-only or formatting-only markdown changes are acceptable when structural equivalence is preserved.
 
-- Week-1 item #2 is not complete (current `SourceInfo` is a single `raw_source: String`, not yet normalized enough for robust storage/query/filter use).
-- Week-1 item #3 (UUID/content-hash dedupe flow contract) is not wired at API boundaries.
-- Week-1 items #4-#7 are all prerequisites for reliable parser roundtrip testing and stricter contracts.
-- No parser implementation exists yet, so starting parser work now would force rework if IR invariants/errors/canonicalization are still moving.
+2. **Expand fixture coverage for difficult Markdown edge patterns**
+   - Add targeted deltas/cases that stress parser/emitter normalization boundaries while maintaining gate semantics.
 
-## 4) Recommended next major build push
+3. **Define and lock CLI integration boundary**
+   - Establish the exact Phase-2 CLI contract for parser/emitter + roundtrip workflow handoff.
 
-## **Push Name: "Week-1 IR Finalization Completion"**
+## Definition of done for this push
 
-Complete the remaining Week-1 IR reliability contract before parser implementation.
+- Phase 2B checklist items in `TODO.md` are checked.
+- Any docs/tests touched by the above changes remain consistent with Phase-1 gate definitions in `docs/phase-gates.md`.
+- Planning docs continue to state the current reality: **Phase 1 + Phase 2A done; Phase 2B hardening active**.
 
-### Why this should be next
+## Why this is the correct next push
 
-- It directly follows current TODO ownership and avoids context switching.
-- It de-risks Week-2 parser/emitter work by freezing invariants and error surfaces first.
-- It establishes stable test semantics (normalized equality + inline canonicalization) required for markdown roundtrip acceptance criteria in the spec.
-
-## 5) Scope for this push (concrete deliverables)
-
-1. **Finish SourceInfo normalization**
-   - Replace/extend `raw_source` with structured, storage-ready fields (e.g., `kind`, `locator`, `display`, optional `origin_host` for URLs).
-   - Preserve enough raw context for debugging while making metadata queryable.
-
-2. **Define ingest identity contract**
-   - Explicitly codify when `DocumentMeta.id` is generated (UUID v4).
-   - Add deterministic content-hash function and document dedupe decision contract.
-
-3. **Add semantic IR comparison utilities for tests**
-   - Introduce normalized-equality helper(s) tolerant of insignificant whitespace.
-   - Keep structural differences strict failures.
-
-4. **Add inline canonicalization pass**
-   - Merge adjacent `Inline::Text` nodes.
-   - Enforce canonical order/shape where appropriate before emit/compare.
-
-5. **Strengthen table and GenericBlock invariants**
-   - Validation checks for row/cell consistency and legal confidence ranges.
-   - Unit tests around malformed IR cases.
-
-6. **Expand typed error model across traits**
-   - Move `Result<_, String>` trait signatures toward typed domain errors.
-   - Keep conversion points into top-level `Error` explicit.
-
-7. **Backfill tests as hard gate**
-   - IR validation unit tests.
-   - Canonicalization tests.
-   - Semantic equality tests.
-   - Metadata normalization tests.
-
-## 6) Definition of done
-
-This push should be considered complete only when:
-
-- Week-1 TODO items 2-7 are checked off.
-- `cargo test` includes a dedicated IR contract suite with positive+negative cases.
-- Public docs (`README` or TODO) are updated to mark the handoff to "Markdown parser + markdown emitter roundtrip" as the next implementation phase.
-
-## 7) What to do immediately after this push
-
-Start the next major push: **Markdown parser + markdown emitter + IR roundtrip tests** (README order #2), using the now-stable IR contract as the foundation.
-
----
-
-## One-line decision
-
-The next major build push should be **finishing Week-1 IR finalization (items 2-7) as a single reliability milestone**, then moving to Markdown roundtrip implementation.
+- It matches the current roadmap state and avoids regression to outdated scaffold assumptions.
+- It preserves the Phase-1 quality bar while hardening contracts needed before broader phase expansion.
+- It reduces drift between planning documents by anchoring status to an explicit dated snapshot.
