@@ -261,10 +261,7 @@ fn emit_display_math_paragraph(content: &[Inline], out: &mut String) -> bool {
         return false;
     }
 
-    let inner = trimmed
-        .trim_start_matches('[')
-        .trim_end_matches(']')
-        .trim();
+    let inner = trimmed.trim_start_matches('[').trim_end_matches(']').trim();
     if inner.is_empty() {
         return false;
     }

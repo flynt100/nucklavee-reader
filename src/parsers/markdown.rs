@@ -45,6 +45,9 @@ pub struct ParseOptions {
     /// Optional human-readable source descriptor (path, url, etc.) to attach
     /// to `DocumentMeta.source.raw_source`.
     pub source_descriptor: Option<String>,
+    /// When enabled, bare callout paragraphs (e.g. `[!note]` without `>`)
+    /// are normalized into canonical blockquote callout form before parsing.
+    pub normalize_bare_callouts: bool,
 }
 
 /// Parse a markdown string into a [`Document`]. Never fails — unsupported
@@ -52,6 +55,12 @@ pub struct ParseOptions {
 pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let (frontmatter, frontmatter_len) = extract_frontmatter(input);
     let body_input = &input[frontmatter_len..];
+    let (normalized_body, mut diagnostics) = preprocess_bare_callout_paragraphs(
+        body_input,
+        frontmatter_len,
+        opts.normalize_bare_callouts,
+    );
+    let parse_input = normalized_body.as_deref().unwrap_or(body_input);
 
     let id: DocumentId = Uuid::new_v4();
     let meta = DocumentMeta {
@@ -72,11 +81,10 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
-    let parser = CmarkParser::new_ext(body_input, options);
+    let parser = CmarkParser::new_ext(parse_input, options);
 
     let mut stack: Vec<Frame> = vec![Frame::Document];
     let mut top_body: Vec<BlockNode> = Vec::new();
-    let mut diagnostics: Vec<Diagnostic> = Vec::new();
     let mut section_path: Vec<String> = Vec::new();
     // Previous heading levels in source order; used to pop section path.
     let mut heading_levels: Vec<u8> = Vec::new();
@@ -103,7 +111,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 id,
                 Inline::Text(restore_escaped_math_brackets(
                     s.into_string(),
-                    &input[range.clone()],
+                    &parse_input[(range.start - frontmatter_len)..(range.end - frontmatter_len)],
                 )),
             ),
             Event::Code(s) => push_inline(
@@ -236,6 +244,96 @@ fn read_line(input: &str, offset: usize) -> Option<(&str, usize)> {
         (i, i)
     };
     Some((&input[offset..line_end], next_offset))
+}
+
+fn preprocess_bare_callout_paragraphs(
+    body_input: &str,
+    frontmatter_len: usize,
+    normalize: bool,
+) -> (Option<String>, Vec<Diagnostic>) {
+    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    let mut normalized = if normalize {
+        Some(String::with_capacity(body_input.len() + 16))
+    } else {
+        None
+    };
+
+    let mut offset = 0usize;
+    while let Some((line, next_offset)) = read_line(body_input, offset) {
+        let is_blank = line.trim().is_empty();
+        if is_blank {
+            if let Some(out) = &mut normalized {
+                out.push_str(&body_input[offset..next_offset]);
+            }
+            offset = next_offset;
+            continue;
+        }
+
+        let para_start = offset;
+        let mut para_end = next_offset;
+        offset = next_offset;
+        while let Some((next_line, next_next_offset)) = read_line(body_input, offset) {
+            if next_line.trim().is_empty() {
+                break;
+            }
+            para_end = next_next_offset;
+            offset = next_next_offset;
+        }
+
+        let paragraph = &body_input[para_start..para_end];
+        let first_line = paragraph.lines().next().unwrap_or_default();
+        let maybe_end = bare_callout_marker_end(first_line);
+        if let Some(marker_end) = maybe_end {
+            let range_start = frontmatter_len + para_start;
+            diagnostics.push(
+                Diagnostic::new(
+                    DiagnosticKind::Normalized,
+                    "bare callout marker without blockquote prefix; expected `> [!type]`",
+                )
+                .with_range(ByteRange::new(range_start, range_start + marker_end)),
+            );
+
+            if let Some(out) = &mut normalized {
+                for segment in paragraph.split_inclusive('\n') {
+                    out.push_str("> ");
+                    out.push_str(segment);
+                }
+                if !paragraph.ends_with('\n') {
+                    // Preserve paragraph boundary exactly.
+                }
+            }
+        } else if let Some(out) = &mut normalized {
+            out.push_str(paragraph);
+        }
+    }
+
+    if let Some(out) = &mut normalized {
+        if offset < body_input.len() {
+            out.push_str(&body_input[offset..]);
+        }
+    }
+
+    (normalized, diagnostics)
+}
+
+fn bare_callout_marker_end(line: &str) -> Option<usize> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('>') {
+        return None;
+    }
+    if !trimmed.starts_with("[!") {
+        return None;
+    }
+    let close = trimmed.find(']')?;
+    if close < 3 || close > 32 {
+        return None;
+    }
+    let trailing = trimmed[(close + 1)..].chars().next();
+    if matches!(trailing, Some(ch) if !ch.is_whitespace()) {
+        return None;
+    }
+    let leading_ws = line.len() - trimmed.len();
+    Some(leading_ws + close + 1)
 }
 
 // --- frames ------------------------------------------------------------

@@ -94,3 +94,16 @@ fn text_after_heading_inherits_section_path() {
         .expect("paragraph not found");
     assert_eq!(body, vec!["A".to_string(), "B".to_string()]);
 }
+
+#[test]
+fn bare_callout_without_blockquote_prefix_emits_diagnostic() {
+    let src = "[!note] Release Notes\nMore details\n";
+    let doc = parse_markdown(src, opts());
+    assert!(
+        doc.diagnostics.iter().any(|d| {
+            d.kind == DiagnosticKind::Normalized && d.message.contains("expected `> [!type]`")
+        }),
+        "expected bare callout diagnostic, got {:?}",
+        doc.diagnostics
+    );
+}
