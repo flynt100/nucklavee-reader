@@ -38,8 +38,8 @@ Primary goal delivered: post-gate packaging/wiring for the first working ingest/
 Primary goal: tighten behavior contracts and handoff boundaries around the completed Markdown core loop.
 
 1. [x] Define and document acceptable normalization deltas (whitespace/list-marker canonicalization and semantic-regression boundaries) in `docs/normalization-deltas.md`.
-2. [ ] Expand fixture coverage deltas for difficult Markdown edge patterns.
-3. [ ] Define/lock CLI integration boundary for parser/emitter + roundtrip workflow.
+2. [x] Expand fixture coverage deltas for difficult Markdown edge patterns.
+3. [x] Define/lock CLI integration boundary for parser/emitter + roundtrip workflow.
 
 ## Phase 3 — HTML Parser/Emitter + Cross-Format Integrity
 

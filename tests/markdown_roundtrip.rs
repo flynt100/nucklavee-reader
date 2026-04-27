@@ -107,6 +107,36 @@ fn roundtrip_expected_diagnostic(name: &str) {
     roundtrip(name);
 }
 
+const FIXTURE_EXPANSION_EXPECTED_STABLE: &[&str] = &[
+    "12_callout_blockquote.md",
+    "13_frontmatter_nested_yaml.md",
+    "13_syntax_preservation.md",
+    "14_math_delimiters.md",
+    "16_escape_boundaries.md",
+];
+
+const FIXTURE_EXPANSION_EXPECTED_DIAGNOSTIC: &[&str] = &[
+    "09_diagnostics.md",
+    "15_nested_mixed_structures.md",
+    "17_common_malformed_variants.md",
+];
+
+#[test]
+// Phase 2B fixture-expansion classification: stable fixtures must stay diagnostic-free.
+fn fixture_expansion_stable_classification_is_enforced() {
+    for fixture in FIXTURE_EXPANSION_EXPECTED_STABLE {
+        roundtrip_expected_stable(fixture);
+    }
+}
+
+#[test]
+// Phase 2B fixture-expansion classification: malformed/lossy fixtures must emit diagnostics.
+fn fixture_expansion_expected_diagnostic_classification_is_enforced() {
+    for fixture in FIXTURE_EXPANSION_EXPECTED_DIAGNOSTIC {
+        roundtrip_expected_diagnostic(fixture);
+    }
+}
+
 #[test]
 // Policy A: core structural equivalence gate
 fn roundtrip_basic() {

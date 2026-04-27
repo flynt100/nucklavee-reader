@@ -80,3 +80,20 @@ Implications:
   IR printing is explicitly required by an accepted gate criterion.
 - Async/runtime, storage backends, and vector/database dependencies are deferred
   until Phase-3 wiring.
+## Phase 2B exit checklist
+
+Phase 2B is complete only when all items below pass in the same revision:
+
+1. **Fixture expansion classification is enforced**
+   - Stable fixtures and expected-diagnostic fixtures are explicitly classified in `tests/markdown_roundtrip.rs`.
+   - Classification tests must pass and agree with expected diagnostic behavior.
+2. **CLI smoke-contract boundaries are locked**
+   - Dedicated CLI smoke tests verify argument parsing behavior and exact user-facing boundary errors for unsupported/disabled/not-implemented Phase-2 commands.
+3. **Targeted gate test command is green**
+
+```bash
+cargo test --test markdown_roundtrip --test cli_smoke_contract
+```
+
+Phase 2B exit is approved only when this command succeeds without failures.
+
