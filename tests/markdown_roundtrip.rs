@@ -17,6 +17,13 @@
 //! - the second IR (debug)
 //! - the structural diff
 //! - a diagnostic summary
+//!
+//! Policy-area grouping for normalization-delta coverage:
+//! - A) Core structural equivalence gate: `roundtrip_*` fixture tests
+//! - B) Canonicalization/determinism: `parse_emit_is_deterministic_*`
+//! - C) Syntax-preservation contracts: explicit emitted-text/golden tests
+//! - D) Frontmatter boundary integrity: frontmatter roundtrip + boundary checks
+//! - E) Provenance/validation invariants: validation assertions + range bounds test
 
 use std::path::{Path, PathBuf};
 
@@ -73,71 +80,85 @@ fn roundtrip(name: &str) {
 }
 
 #[test]
+// Policy A: core structural equivalence gate
 fn roundtrip_basic() {
     roundtrip("01_basic.md");
 }
 
 #[test]
+// Policy B: list marker canonicalization accepted if structure is stable
 fn roundtrip_lists() {
     roundtrip("02_lists.md");
 }
 
 #[test]
+// Policy A: core structural equivalence gate
 fn roundtrip_code_and_quotes() {
     roundtrip("03_code_and_quotes.md");
 }
 
 #[test]
+// Policy A: core structural equivalence gate
 fn roundtrip_links_and_images() {
     roundtrip("04_links_and_images.md");
 }
 
 #[test]
+// Policy A: core structural equivalence gate
 fn roundtrip_tables() {
     roundtrip("05_tables.md");
 }
 
 #[test]
+// Policy A: core structural equivalence gate
 fn roundtrip_headings() {
     roundtrip("06_headings.md");
 }
 
 #[test]
+// Policy B: whitespace/edge canonicalization accepted if structure is stable
 fn roundtrip_edges() {
     roundtrip("07_edge.md");
 }
 
 #[test]
+// Policy B: hard nested-list/table normalization accepted if structure is stable
 fn roundtrip_hard() {
     roundtrip("08_hard.md");
 }
 
 #[test]
+// Policy D: frontmatter/body boundary must remain intact
 fn roundtrip_frontmatter() {
     roundtrip("10_frontmatter.md");
 }
 
 #[test]
+// Policy C: literal syntax protection gate
 fn roundtrip_literal_markdown_syntax() {
     roundtrip("11_literal_syntax.md");
 }
 
 #[test]
+// Policy C: callout-like blockquote semantics must survive canonicalization
 fn roundtrip_callout_blockquote_fixture() {
     roundtrip("12_callout_blockquote.md");
 }
 
 #[test]
+// Policy D: nested YAML frontmatter integrity
 fn roundtrip_frontmatter_nested_yaml() {
     roundtrip("13_frontmatter_nested_yaml.md");
 }
 
 #[test]
+// Policy C: syntax-preservation fixture broad gate
 fn roundtrip_syntax_preservation_fixture() {
     roundtrip("13_syntax_preservation.md");
 }
 
 #[test]
+// Policy C: math delimiter preservation gate
 fn roundtrip_math_delimiters_fixture() {
     roundtrip("14_math_delimiters.md");
 }
@@ -203,12 +224,14 @@ fn assert_deterministic_parse_emit(label: &str, source: &str, iterations: usize)
 }
 
 #[test]
+// Policy E: parse->emit->parse must converge to deterministic output
 fn parse_emit_is_deterministic_for_nested_lists_and_tables_fixture() {
     let (label, source) = load_fixture("08_hard.md");
     assert_deterministic_parse_emit(&label, &source, 5);
 }
 
 #[test]
+// Policy E: determinism holds even for diagnostic-producing inputs
 fn parse_emit_is_deterministic_for_diagnostics_fixture() {
     let (label, source) = load_fixture("09_diagnostics.md");
     let initial = parse_markdown(&source, opts());
@@ -220,6 +243,7 @@ fn parse_emit_is_deterministic_for_diagnostics_fixture() {
 }
 
 #[test]
+// Policy C: explicit contract for preserving literal wikilink/callout/math syntax
 fn emitted_text_preserves_wikilink_callout_and_math_syntax() {
     let (_, source) = load_fixture("13_syntax_preservation.md");
     let doc = parse_markdown(&source, opts());
@@ -251,6 +275,7 @@ fn emitted_text_preserves_wikilink_callout_and_math_syntax() {
 }
 
 #[test]
+// Policy C: golden output + structural contract for callout blockquote fixture
 fn callout_blockquote_fixture_has_stable_golden_output_and_structure() {
     let (_, source) = load_fixture("12_callout_blockquote.md");
     let doc = parse_markdown(&source, opts());
@@ -302,6 +327,7 @@ fn callout_blockquote_fixture_has_stable_golden_output_and_structure() {
 }
 
 #[test]
+// Policy C: golden output + structural contract for math delimiter fixture
 fn math_delimiters_fixture_has_stable_golden_output_and_structure() {
     let (_, source) = load_fixture("14_math_delimiters.md");
     let doc = parse_markdown(&source, opts());
@@ -322,6 +348,7 @@ fn math_delimiters_fixture_has_stable_golden_output_and_structure() {
 }
 
 #[test]
+// Policy D: frontmatter must be captured in metadata, not body blocks
 fn frontmatter_is_captured_and_not_treated_as_body() {
     let (_, source) = load_fixture("10_frontmatter.md");
     let doc = parse_markdown(&source, opts());

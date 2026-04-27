@@ -101,3 +101,4 @@ If another format is passed, the CLI/runtime error string is:
 
 - `nucklavee-spec.md` (source of truth for scope and behavior)
 - `docs/phase-gates.md` (phase exit criteria and blocker vs warning policy)
+- `docs/normalization-deltas.md` (allowed markdown parse/emit deltas vs semantic regressions)
