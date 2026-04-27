@@ -210,15 +210,15 @@ fn roundtrip_common_malformed_variants_fixture_expected_diagnostic() {
 }
 
 #[test]
-// Policy D/E: escaped single-line payloads should normalize and capture frontmatter
-fn roundtrip_escaped_newline_frontmatter_fixture_expected_diagnostic() {
-    roundtrip_expected_diagnostic("18_escaped_newline_frontmatter.md");
+// Policy E: phase-2B pseudo-table conversion should roundtrip deterministically
+fn roundtrip_phase2b_tsv_like_fixture() {
+    roundtrip("18_phase2b_tsv_like.md");
 }
 
 #[test]
-// Policy D/E: unfenced YAML-like prelude should be inferred as frontmatter with normalization diagnostic
-fn roundtrip_unfenced_frontmatter_fixture_expected_diagnostic() {
-    roundtrip_expected_diagnostic("19_unfenced_frontmatter_block.md");
+// Policy E: ambiguous tabular shape should fall back with diagnostics and remain deterministic
+fn roundtrip_phase2b_malformed_tsv_fixture_expected_diagnostic() {
+    roundtrip_expected_diagnostic("19_phase2b_tsv_malformed.md");
 }
 
 #[test]
@@ -298,6 +298,21 @@ fn parse_emit_is_deterministic_for_diagnostics_fixture() {
         "expected diagnostics fixture to produce diagnostics"
     );
     assert_deterministic_parse_emit(&label, &source, 5);
+}
+
+#[test]
+// Policy E: determinism for phase-2B table fallback path
+fn parse_emit_is_deterministic_for_phase2b_fallback_fixtures() {
+    let (label_ok, source_ok) = load_fixture("18_phase2b_tsv_like.md");
+    assert_deterministic_parse_emit(&label_ok, &source_ok, 5);
+
+    let (label_bad, source_bad) = load_fixture("19_phase2b_tsv_malformed.md");
+    let initial = parse_markdown(&source_bad, opts());
+    assert!(
+        !initial.diagnostics.is_empty(),
+        "expected malformed phase-2B fixture to produce diagnostics"
+    );
+    assert_deterministic_parse_emit(&label_bad, &source_bad, 5);
 }
 
 #[test]
