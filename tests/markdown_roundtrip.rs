@@ -79,6 +79,27 @@ fn roundtrip(name: &str) {
     }
 }
 
+fn roundtrip_expected_stable(name: &str) {
+    let (label, source) = load_fixture(name);
+    let doc = parse_markdown(&source, opts());
+    assert!(
+        doc.diagnostics.is_empty(),
+        "fixture {label}: expected stable fixture with no diagnostics, got {:?}",
+        doc.diagnostics
+    );
+    roundtrip(name);
+}
+
+fn roundtrip_expected_diagnostic(name: &str) {
+    let (label, source) = load_fixture(name);
+    let doc = parse_markdown(&source, opts());
+    assert!(
+        !doc.diagnostics.is_empty(),
+        "fixture {label}: expected diagnostics, got none"
+    );
+    roundtrip(name);
+}
+
 #[test]
 // Policy A: core structural equivalence gate
 fn roundtrip_basic() {
@@ -161,6 +182,24 @@ fn roundtrip_syntax_preservation_fixture() {
 // Policy C: math delimiter preservation gate
 fn roundtrip_math_delimiters_fixture() {
     roundtrip("14_math_delimiters.md");
+}
+
+#[test]
+// Policy E: expected diagnostic behavior for deeply nested mixed list/blockquote/table interactions
+fn roundtrip_nested_mixed_structures_fixture_expected_diagnostic() {
+    roundtrip_expected_diagnostic("15_nested_mixed_structures.md");
+}
+
+#[test]
+// Policy C: expected stable escaping/literal-boundary behavior
+fn roundtrip_escape_boundaries_fixture_expected_stable() {
+    roundtrip_expected_stable("16_escape_boundaries.md");
+}
+
+#[test]
+// Policy E: expected diagnostic behavior for malformed-but-common source variants
+fn roundtrip_common_malformed_variants_fixture_expected_diagnostic() {
+    roundtrip_expected_diagnostic("17_common_malformed_variants.md");
 }
 
 #[test]
