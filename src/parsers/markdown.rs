@@ -216,6 +216,90 @@ fn extract_frontmatter(input: &str) -> (Option<Frontmatter>, usize) {
     (None, 0)
 }
 
+struct NormalizedInput {
+    input: String,
+    diagnostics: Vec<Diagnostic>,
+}
+
+fn normalize_preparse_input(input: &str) -> NormalizedInput {
+    let mut diagnostics = Vec::new();
+    if appears_single_line_escaped_markdown(input) {
+        let decoded = decode_escaped_newlines(input);
+        if decoded != input {
+            diagnostics.push(Diagnostic::new(
+                DiagnosticKind::Normalized,
+                "decoded escaped newline stream before markdown parse",
+            ));
+            return NormalizedInput {
+                input: decoded,
+                diagnostics,
+            };
+        }
+    }
+
+    NormalizedInput {
+        input: input.to_string(),
+        diagnostics,
+    }
+}
+
+fn appears_single_line_escaped_markdown(input: &str) -> bool {
+    let trimmed = input.trim_end_matches(['\n', '\r']);
+    !trimmed.contains('\n') && trimmed.contains("\\n")
+}
+
+fn decode_escaped_newlines(input: &str) -> String {
+    input.replace("\\r\\n", "\n").replace("\\n", "\n")
+}
+
+fn infer_probable_frontmatter(input: &str) -> Option<(Frontmatter, usize)> {
+    if input.starts_with("---") {
+        return None;
+    }
+
+    let mut offset = 0usize;
+    let mut yaml_end = 0usize;
+    let mut key_value_lines = 0usize;
+    let mut saw_nonempty = false;
+
+    while let Some((line, next_offset)) = read_line(input, offset) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        saw_nonempty = true;
+        if is_probable_yaml_key_value_line(trimmed) {
+            key_value_lines += 1;
+            yaml_end = next_offset;
+            offset = next_offset;
+            continue;
+        }
+        break;
+    }
+
+    if !saw_nonempty || key_value_lines < 2 {
+        return None;
+    }
+
+    Some((
+        Frontmatter {
+            yaml: input[..yaml_end].replace("\r\n", "\n"),
+        },
+        yaml_end,
+    ))
+}
+
+fn is_probable_yaml_key_value_line(line: &str) -> bool {
+    let Some((key, _value)) = line.split_once(':') else {
+        return false;
+    };
+    if key.is_empty() {
+        return false;
+    }
+    key.chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
 fn is_frontmatter_delimiter(line: &str) -> bool {
     line.trim_end_matches('\r') == "---"
 }
