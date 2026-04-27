@@ -46,6 +46,13 @@ fn opts() -> ParseOptions {
     ParseOptions::default()
 }
 
+fn opts_with_callout_normalization() -> ParseOptions {
+    ParseOptions {
+        normalize_bare_callouts: true,
+        ..ParseOptions::default()
+    }
+}
+
 fn roundtrip(name: &str) {
     let (label, source) = load_fixture(name);
     let doc1 = parse_markdown(&source, opts());
@@ -394,6 +401,23 @@ fn math_delimiters_fixture_has_stable_golden_output_and_structure() {
     if let Some(diff) = structural_diff(&doc, &reparsed) {
         panic!(
             "expected math delimiters fixture to stay structurally equivalent after golden emission, got diff: {diff}\n--- emitted ---\n{emitted}\n--- ir1 ---\n{doc:#?}\n--- ir2 ---\n{reparsed:#?}",
+        );
+    }
+}
+
+#[test]
+// Policy C: optional bare-callout normalization emits stable canonical output
+fn normalized_bare_callout_fixture_has_stable_output() {
+    let (_, source) = load_fixture("18_normalized_bare_callout.md");
+    let doc = parse_markdown(&source, opts_with_callout_normalization());
+    let emitted = emit_markdown(&doc);
+    let expected = "# Bare Callout Normalization Fixture\n\n> [!tip] Normalized heading\n> Second line stays in the same callout paragraph.";
+    assert_eq!(emitted, expected, "normalized callout output changed");
+
+    let reparsed = parse_markdown(&emitted, opts_with_callout_normalization());
+    if let Some(diff) = structural_diff(&doc, &reparsed) {
+        panic!(
+            "expected normalized callout fixture to stay structurally equivalent, got diff: {diff}\n--- emitted ---\n{emitted}\n--- ir1 ---\n{doc:#?}\n--- ir2 ---\n{reparsed:#?}",
         );
     }
 }
