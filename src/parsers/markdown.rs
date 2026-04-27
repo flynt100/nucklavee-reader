@@ -54,11 +54,18 @@ pub struct ParseOptions {
 /// Parse a markdown string into a [`Document`]. Never fails — unsupported
 /// constructs produce diagnostics.
 pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
-    let (frontmatter, frontmatter_len) = extract_frontmatter(input);
-    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    let normalized = normalize_preparse_input(input);
+    // `parse_input` is the canonical source for all offsets produced by the
+    // parser event loop below. Keep every byte range/slice anchored to this
+    // exact string so frontmatter-relative offsets and inline source slices
+    // cannot drift.
+    let parse_input = &normalized.input;
+    let (frontmatter, frontmatter_len) = extract_frontmatter(parse_input);
+    let mut diagnostics: Vec<Diagnostic> = normalized.diagnostics;
 
-    let mut body_end = input.len();
-    if let Some(dup) = detect_repeated_leading_segment(input, frontmatter_len, frontmatter.as_ref())
+    let mut body_end = parse_input.len();
+    if let Some(dup) =
+        detect_repeated_leading_segment(parse_input, frontmatter_len, frontmatter.as_ref())
     {
         let range = ByteRange::new(dup.start, dup.end);
         if opts.normalize_repeated_leading_segment {
@@ -87,7 +94,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
         }
     }
 
-    let body_input = &input[frontmatter_len..body_end];
+    let parse_body_input = &parse_input[frontmatter_len..body_end];
 
     let id: DocumentId = Uuid::new_v4();
     let meta = DocumentMeta {
@@ -108,7 +115,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
-    let parser = CmarkParser::new_ext(parse_input, options);
+    let parser = CmarkParser::new_ext(parse_body_input, options);
 
     let mut stack: Vec<Frame> = vec![Frame::Document];
     let mut top_body: Vec<BlockNode> = Vec::new();
@@ -117,13 +124,15 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut heading_levels: Vec<u8> = Vec::new();
 
     for (event, range) in parser.into_offset_iter() {
+        // `into_offset_iter()` ranges are relative to `parse_body_input`; map
+        // back to `parse_input` by adding `frontmatter_len`.
         let range = (range.start + frontmatter_len)..(range.end + frontmatter_len);
         match event {
             Event::Start(tag) => start_tag(tag, range, &mut stack),
             Event::End(end) => end_tag(
                 end,
                 range,
-                input,
+                parse_input,
                 &mut stack,
                 &mut top_body,
                 &mut section_path,
