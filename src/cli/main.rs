@@ -56,8 +56,8 @@ fn main() -> ExitCode {
 #[derive(Debug, Parser)]
 #[command(name = "nucklavee")]
 #[command(
-    about = "nucklavee Phase-2 CLI",
-    long_about = "Phase 2 supports retrieval through `ingest-emit` only. Standalone `emit --id` is disabled because IDs are process-local with the in-memory store."
+    about = "nucklavee Phase-2 CLI (ingest-emit retrieval only)",
+    long_about = "Phase 2 supports retrieval through `ingest-emit` only. The CLI uses an in-memory document store, and document IDs are process-local and valid only in the process that created them. Standalone `emit --id` is disabled in Phase 2."
 )]
 struct Cli {
     #[command(subcommand)]

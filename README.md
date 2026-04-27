@@ -83,9 +83,13 @@ cargo run --bin nucklavee
 
 ### Phase-2 CLI usage (important)
 
-Phase 2 enforces one-shot retrieval via `ingest-emit`.
-The CLI keeps documents in an in-memory store inside one process, and document IDs
-are process-local.
+Phase 2 supports retrieval through `ingest-emit` only.
+
+Persistence semantics are strict:
+
+- The CLI uses an in-memory document store.
+- Document IDs are process-local and only valid inside the process that created them.
+- IDs printed by `ingest` are not reusable across separate CLI invocations.
 
 Use this command for reliable behavior:
 
@@ -96,6 +100,9 @@ cargo run --bin nucklavee -- ingest-emit ./fixtures/sample.md --format markdown
 `--format` currently supports exactly: `markdown`.
 If another format is passed, the CLI/runtime error string is:
 `unsupported format '<value>'. supported: markdown`.
+
+For the complete command boundary and behavior matrix, see
+`docs/cli-phase2-boundary.md`.
 
 ## Reference Spec
 
