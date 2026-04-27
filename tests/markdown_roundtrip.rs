@@ -203,6 +203,18 @@ fn roundtrip_common_malformed_variants_fixture_expected_diagnostic() {
 }
 
 #[test]
+// Policy D/E: escaped single-line payloads should normalize and capture frontmatter
+fn roundtrip_escaped_newline_frontmatter_fixture_expected_diagnostic() {
+    roundtrip_expected_diagnostic("18_escaped_newline_frontmatter.md");
+}
+
+#[test]
+// Policy D/E: unfenced YAML-like prelude should be inferred as frontmatter with normalization diagnostic
+fn roundtrip_unfenced_frontmatter_fixture_expected_diagnostic() {
+    roundtrip_expected_diagnostic("19_unfenced_frontmatter_block.md");
+}
+
+#[test]
 fn title_extraction_uses_first_h1() {
     let (_, source) = load_fixture("06_headings.md");
     let doc = parse_markdown(&source, opts());
@@ -415,6 +427,50 @@ fn frontmatter_is_captured_and_not_treated_as_body() {
         yaml.contains("\"[[Nucklavee Reader]]\""),
         "expected Obsidian wikilink-style string in frontmatter aliases"
     );
+}
+
+#[test]
+fn escaped_newline_frontmatter_is_normalized_and_captured() {
+    let (_, source) = load_fixture("18_escaped_newline_frontmatter.md");
+    let doc = parse_markdown(&source, opts());
+    let frontmatter = doc.meta.frontmatter.as_ref().expect("expected frontmatter");
+
+    assert!(
+        frontmatter.yaml.contains("title: Escaped Stream"),
+        "expected escaped-newline stream to decode into YAML frontmatter"
+    );
+    assert!(
+        doc.diagnostics.iter().any(|d| {
+            matches!(d.kind, nucklavee::DiagnosticKind::Normalized)
+                && d.message
+                    .contains("decoded escaped newline stream before markdown parse")
+        }),
+        "expected escaped-newline normalization diagnostic, got {:?}",
+        doc.diagnostics
+    );
+}
+
+#[test]
+fn unfenced_frontmatter_is_inferred_and_reported_deterministically() {
+    let (_, source) = load_fixture("19_unfenced_frontmatter_block.md");
+    let doc = parse_markdown(&source, opts());
+    let frontmatter = doc.meta.frontmatter.as_ref().expect("expected frontmatter");
+
+    assert!(
+        frontmatter.yaml.contains("author: Parser Bot"),
+        "expected inferred frontmatter to include YAML-like key/value lines"
+    );
+    assert!(
+        doc.diagnostics.iter().any(|d| {
+            matches!(d.kind, nucklavee::DiagnosticKind::Normalized)
+                && d.message
+                    .contains("inferred unfenced YAML-like frontmatter block at document start")
+        }),
+        "expected inferred-frontmatter normalization diagnostic, got {:?}",
+        doc.diagnostics
+    );
+
+    assert_deterministic_parse_emit("19_unfenced_frontmatter_block.md", &source, 5);
 }
 
 fn walk_ranges(doc: &Document, source_len: usize) {
