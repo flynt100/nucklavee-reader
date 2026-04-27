@@ -55,11 +55,15 @@ Remaining unimplemented paths currently return explicit `not implemented` errors
 
 ## Near-Term Implementation Order
 
-1. Phase 2 hardening (normalization policy, fixture deltas, CLI integration boundary)
-2. HTML parser/emitter and cross-format tests
-3. Store + chunking + embedder + vector index
-4. CLI command wiring
-5. PDF pipeline (iterative heuristics)
+1. Finish **Phase 2B exit checklist** from `docs/phase-gates.md` in one green revision:
+   - fixture expansion classification enforced,
+   - CLI smoke-contract boundaries locked,
+   - `cargo test --test markdown_roundtrip --test cli_smoke_contract` passing.
+2. Start **Phase 3** immediately after Phase 2B gate closure (HTML parser/emitter + cross-format integrity).
+3. Continue **Cross-Phase Quality Gates** in parallel (module-boundary unit tests, golden fixtures, IR property tests, typed error taxonomy consistency, performance baselines, and per-phase docs updates).
+4. Store + chunking + embedder + vector index.
+5. CLI command wiring.
+6. PDF pipeline (iterative heuristics).
 
 ## Development
 
