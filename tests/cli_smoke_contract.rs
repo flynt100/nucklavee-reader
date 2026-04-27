@@ -12,7 +12,12 @@ fn cli() -> Command {
 #[test]
 fn ingest_emit_rejects_unsupported_format_with_expected_parse_error() {
     let output = cli()
-        .args(["ingest-emit", "tests/fixtures/01_basic.md", "--format", "html"])
+        .args([
+            "ingest-emit",
+            "tests/fixtures/01_basic.md",
+            "--format",
+            "html",
+        ])
         .output()
         .expect("failed to run nucklavee binary");
 
