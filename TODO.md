@@ -37,7 +37,7 @@ Primary goal delivered: post-gate packaging/wiring for the first working ingest/
 
 Primary goal: tighten behavior contracts and handoff boundaries around the completed Markdown core loop.
 
-1. [ ] Define and document acceptable normalization deltas (whitespace-only differences).
+1. [x] Define and document acceptable normalization deltas (whitespace/list-marker canonicalization and semantic-regression boundaries) in `docs/normalization-deltas.md`.
 2. [ ] Expand fixture coverage deltas for difficult Markdown edge patterns.
 3. [ ] Define/lock CLI integration boundary for parser/emitter + roundtrip workflow.
 
@@ -103,3 +103,4 @@ Primary goal: practical PDF ingestion with explicit confidence and graceful fall
 - **Current truth:** Markdown parser/emitter and IR roundtrip harness are complete.
 - **Exact next focus:** finish Phase 2B hardening: normalization policy docs, fixture expansion deltas, and CLI integration boundary.
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).
+- **Normalization policy reference:** `docs/normalization-deltas.md` (acceptable parse/emit deltas vs semantic regressions).
