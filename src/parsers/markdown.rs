@@ -145,6 +145,8 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut heading_levels: Vec<u8> = Vec::new();
 
     for (event, range) in parser.into_offset_iter() {
+        // `into_offset_iter()` ranges are relative to `parse_body_input`; map
+        // back to `parse_input` by adding `frontmatter_len`.
         let range = (range.start + frontmatter_len)..(range.end + frontmatter_len);
         match event {
             Event::Start(tag) => start_tag(tag, range, &mut stack),
