@@ -1,0 +1,1 @@
+---\ntitle: Escaped Stream\ntags:\n  - parser\n  - normalization\n---\n# Escaped Fixture\n\nBody line.

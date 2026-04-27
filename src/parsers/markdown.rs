@@ -50,8 +50,20 @@ pub struct ParseOptions {
 /// Parse a markdown string into a [`Document`]. Never fails — unsupported
 /// constructs produce diagnostics.
 pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
-    let (frontmatter, frontmatter_len) = extract_frontmatter(input);
-    let body_input = &input[frontmatter_len..];
+    let normalized = normalize_preparse_input(input);
+    let parse_input = normalized.input.as_str();
+
+    let mut inferred_frontmatter = false;
+    let (frontmatter, frontmatter_len) = match extract_frontmatter(parse_input) {
+        (Some(frontmatter), len) => (Some(frontmatter), len),
+        (None, _) => infer_probable_frontmatter(parse_input)
+            .map(|(frontmatter, len)| {
+                inferred_frontmatter = true;
+                (Some(frontmatter), len)
+            })
+            .unwrap_or((None, 0)),
+    };
+    let body_input = &parse_input[frontmatter_len..];
 
     let id: DocumentId = Uuid::new_v4();
     let meta = DocumentMeta {
@@ -76,7 +88,13 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
 
     let mut stack: Vec<Frame> = vec![Frame::Document];
     let mut top_body: Vec<BlockNode> = Vec::new();
-    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    let mut diagnostics: Vec<Diagnostic> = normalized.diagnostics;
+    if inferred_frontmatter {
+        diagnostics.push(Diagnostic::new(
+            DiagnosticKind::Normalized,
+            "inferred unfenced YAML-like frontmatter block at document start",
+        ));
+    }
     let mut section_path: Vec<String> = Vec::new();
     // Previous heading levels in source order; used to pop section path.
     let mut heading_levels: Vec<u8> = Vec::new();
@@ -103,7 +121,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 id,
                 Inline::Text(restore_escaped_math_brackets(
                     s.into_string(),
-                    &input[range.clone()],
+                    &parse_input[range.clone()],
                 )),
             ),
             Event::Code(s) => push_inline(
@@ -206,6 +224,90 @@ fn extract_frontmatter(input: &str) -> (Option<Frontmatter>, usize) {
     }
 
     (None, 0)
+}
+
+struct NormalizedInput {
+    input: String,
+    diagnostics: Vec<Diagnostic>,
+}
+
+fn normalize_preparse_input(input: &str) -> NormalizedInput {
+    let mut diagnostics = Vec::new();
+    if appears_single_line_escaped_markdown(input) {
+        let decoded = decode_escaped_newlines(input);
+        if decoded != input {
+            diagnostics.push(Diagnostic::new(
+                DiagnosticKind::Normalized,
+                "decoded escaped newline stream before markdown parse",
+            ));
+            return NormalizedInput {
+                input: decoded,
+                diagnostics,
+            };
+        }
+    }
+
+    NormalizedInput {
+        input: input.to_string(),
+        diagnostics,
+    }
+}
+
+fn appears_single_line_escaped_markdown(input: &str) -> bool {
+    let trimmed = input.trim_end_matches(['\n', '\r']);
+    !trimmed.contains('\n') && trimmed.contains("\\n")
+}
+
+fn decode_escaped_newlines(input: &str) -> String {
+    input.replace("\\r\\n", "\n").replace("\\n", "\n")
+}
+
+fn infer_probable_frontmatter(input: &str) -> Option<(Frontmatter, usize)> {
+    if input.starts_with("---") {
+        return None;
+    }
+
+    let mut offset = 0usize;
+    let mut yaml_end = 0usize;
+    let mut key_value_lines = 0usize;
+    let mut saw_nonempty = false;
+
+    while let Some((line, next_offset)) = read_line(input, offset) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        saw_nonempty = true;
+        if is_probable_yaml_key_value_line(trimmed) {
+            key_value_lines += 1;
+            yaml_end = next_offset;
+            offset = next_offset;
+            continue;
+        }
+        break;
+    }
+
+    if !saw_nonempty || key_value_lines < 2 {
+        return None;
+    }
+
+    Some((
+        Frontmatter {
+            yaml: input[..yaml_end].replace("\r\n", "\n"),
+        },
+        yaml_end,
+    ))
+}
+
+fn is_probable_yaml_key_value_line(line: &str) -> bool {
+    let Some((key, _value)) = line.split_once(':') else {
+        return false;
+    };
+    if key.is_empty() {
+        return false;
+    }
+    key.chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
 }
 
 fn is_frontmatter_delimiter(line: &str) -> bool {
