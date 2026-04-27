@@ -101,6 +101,9 @@ Primary goal: practical PDF ingestion with explicit confidence and graceful fall
 ## Status Snapshot
 
 - **Current truth:** Markdown parser/emitter and IR roundtrip harness are complete.
-- **Exact next focus:** finish Phase 2B hardening: normalization policy docs, fixture expansion deltas, and CLI integration boundary.
+- **Phase 2B state:** **not yet complete** until the Phase 2B exit checklist in `docs/phase-gates.md` passes in one revision (`cargo test --test markdown_roundtrip --test cli_smoke_contract`).
+- **Exact next focus:** close the remaining Phase 2B gate checklist items/tests; **Phase 3 starts immediately after this gate is green**.
+- **Immediate next phase after gate closure:** Phase 3 — HTML parser/emitter + cross-format integrity.
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).
 - **Normalization policy reference:** `docs/normalization-deltas.md` (acceptable parse/emit deltas vs semantic regressions).
+- **Cross-phase quality gates still open:** all items under **Cross-Phase Quality Gates** remain active and continue as parallel quality work across Phases 2B/3+.
