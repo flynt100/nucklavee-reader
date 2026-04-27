@@ -6,7 +6,7 @@ use nucklavee::embedder::Embedder;
 use nucklavee::ir::{DocumentId, Source};
 use nucklavee::storage::memory::InMemoryDocumentStore;
 use nucklavee::vector::VectorIndex;
-use nucklavee::{Format, Library, Result};
+use nucklavee::{Format, IngestOptions, Library, Result};
 
 #[derive(Debug, Default)]
 struct NoopVectorIndex;
@@ -72,6 +72,8 @@ enum Commands {
     Ingest {
         #[arg(help = "Path to a local .md file")]
         path: String,
+        #[arg(long, help = "Normalize bare callouts like `[!tip]` into blockquotes")]
+        normalize_bare_callouts: bool,
     },
     #[command(
         hide = true,
@@ -89,6 +91,8 @@ enum Commands {
         path: String,
         #[arg(long, value_parser = parse_format, default_value = "markdown")]
         format: Format,
+        #[arg(long, help = "Normalize bare callouts like `[!tip]` into blockquotes")]
+        normalize_bare_callouts: bool,
     },
     Query,
     ContextWindow,
@@ -101,11 +105,18 @@ fn run_phase2_service(
     command: Commands,
 ) -> Result<()> {
     match command {
-        Commands::Ingest { path } => run_ingest(lib, &path),
+        Commands::Ingest {
+            path,
+            normalize_bare_callouts,
+        } => run_ingest(lib, &path, normalize_bare_callouts),
         Commands::Emit { id: _, format: _ } => Err(nucklavee::Error::InvalidInput(
             "emit --id is disabled in Phase 2 because document IDs are process-local. use `ingest-emit <path> --format markdown`".into(),
         )),
-        Commands::IngestEmit { path, format } => run_ingest_emit(lib, &path, format),
+        Commands::IngestEmit {
+            path,
+            format,
+            normalize_bare_callouts,
+        } => run_ingest_emit(lib, &path, format, normalize_bare_callouts),
         Commands::Query => Err(nucklavee::Error::NotImplemented(
             "query is not implemented in Phase 2 (markdown ingest/emit only)",
         )),
@@ -124,8 +135,14 @@ fn run_phase2_service(
 fn run_ingest(
     lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
     path: &str,
+    normalize_bare_callouts: bool,
 ) -> Result<()> {
-    let id = lib.ingest(Source::File(path.into()))?;
+    let id = lib.ingest_with_options(
+        Source::File(path.into()),
+        IngestOptions {
+            normalize_bare_callouts,
+        },
+    )?;
     println!("{id}");
     Ok(())
 }
@@ -134,8 +151,14 @@ fn run_ingest_emit(
     lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
     path: &str,
     format: Format,
+    normalize_bare_callouts: bool,
 ) -> Result<()> {
-    let id = lib.ingest(Source::File(path.into()))?;
+    let id = lib.ingest_with_options(
+        Source::File(path.into()),
+        IngestOptions {
+            normalize_bare_callouts,
+        },
+    )?;
     let output = lib.emit(id, format)?;
     println!("{output}");
     Ok(())

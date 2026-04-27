@@ -49,40 +49,32 @@ pub struct ParseOptions {
     /// signature appears again deep in the body. Disabled by default so parse
     /// behavior is conservative and content remains unchanged.
     pub normalize_repeated_leading_segment: bool,
+    /// If enabled, rewrites bare callout paragraphs (e.g. `[!tip] Title`)
+    /// into canonical blockquote callouts during paragraph finalization.
+    /// Disabled by default so parse behavior remains conservative.
+    pub normalize_bare_callouts: bool,
 }
 
 /// Parse a markdown string into a [`Document`]. Never fails — unsupported
 /// constructs produce diagnostics.
 pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
-    let normalized = normalize_preparse_input(input);
-    let parse_input = normalized.input;
-    let mut diagnostics: Vec<Diagnostic> = normalized
-        .diagnostics
-        .into_iter()
-        .map(|d| d.with_range(ByteRange::new(0, input.len())))
-        .collect();
-
-    let (frontmatter, frontmatter_len, inferred_frontmatter) = {
-        let (frontmatter, frontmatter_len) = extract_frontmatter(&parse_input);
-        if frontmatter.is_some() {
-            (frontmatter, frontmatter_len, false)
-        } else if let Some((frontmatter, frontmatter_len)) = infer_probable_frontmatter(&parse_input)
-        {
-            (Some(frontmatter), frontmatter_len, true)
-        } else {
-            (None, 0, false)
+    let preparse = normalize_preparse_input(input);
+    let parse_input = preparse.input;
+    let mut diagnostics: Vec<Diagnostic> = preparse.diagnostics;
+    let (frontmatter, frontmatter_len) = match extract_frontmatter(&parse_input) {
+        (Some(frontmatter), len) => (Some(frontmatter), len),
+        (None, _) => {
+            if let Some((frontmatter, len)) = infer_probable_frontmatter(&parse_input) {
+                diagnostics.push(Diagnostic::new(
+                    DiagnosticKind::Normalized,
+                    "inferred unfenced YAML-like frontmatter block at document start",
+                ));
+                (Some(frontmatter), len)
+            } else {
+                (None, 0)
+            }
         }
     };
-
-    if inferred_frontmatter {
-        diagnostics.push(
-            Diagnostic::new(
-                DiagnosticKind::Normalized,
-                "inferred unfenced YAML-like frontmatter block at document start",
-            )
-            .with_range(ByteRange::new(0, frontmatter_len)),
-        );
-    }
 
     let mut body_end = parse_input.len();
     if let Some(dup) =
@@ -160,6 +152,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 &mut heading_levels,
                 &mut diagnostics,
                 id,
+                opts.normalize_bare_callouts,
             ),
             Event::Text(s) => push_inline(
                 &mut stack,
@@ -630,6 +623,7 @@ fn end_tag(
     heading_levels: &mut Vec<u8>,
     diagnostics: &mut Vec<Diagnostic>,
     doc_id: DocumentId,
+    normalize_bare_callouts: bool,
 ) {
     match end {
         TagEnd::TableHead => {
@@ -670,6 +664,14 @@ fn end_tag(
                 .with_range(range)
                 .with_section_path(section_path.clone());
             let source_slice = &source[start..end_range.end];
+            if normalize_bare_callouts && !in_blockquote(stack) {
+                if let Some(blockquote) =
+                    normalize_bare_callout_paragraph(source_slice, prov.clone())
+                {
+                    append_block(stack, top_body, blockquote);
+                    return;
+                }
+            }
             match detect_phase2b_tabular_fallback(source_slice) {
                 Some(Phase2bParagraphBlock::Table { headers, rows }) => {
                     append_block(
@@ -1066,6 +1068,53 @@ fn detect_phase2b_tabular_fallback(source_slice: &str) -> Option<Phase2bParagrap
     }
 
     None
+}
+
+fn normalize_bare_callout_paragraph(source_slice: &str, prov: Provenance) -> Option<BlockNode> {
+    let normalized = source_slice
+        .trim()
+        .trim_matches('\n')
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    let mut lines = normalized.lines();
+    let first = lines.next()?.trim_start();
+    if !first.starts_with("[!") {
+        return None;
+    }
+    let Some(end_bracket) = first.find(']') else {
+        return None;
+    };
+    if end_bracket < 3 {
+        return None;
+    }
+    let label = &first[2..end_bracket];
+    if label.is_empty()
+        || !label
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+    {
+        return None;
+    }
+
+    let mut paragraph_text = String::new();
+    for (idx, line) in normalized.lines().enumerate() {
+        if idx > 0 {
+            paragraph_text.push('\n');
+        }
+        paragraph_text.push_str(line.trim_end());
+    }
+
+    Some(BlockNode::new(
+        Block::BlockQuote {
+            children: vec![BlockNode::new(
+                Block::Paragraph {
+                    content: vec![Inline::Text(paragraph_text)],
+                },
+                prov.clone(),
+            )],
+        },
+        prov,
+    ))
 }
 
 /// Flatten inlines into a plain string (used for heading text in section paths

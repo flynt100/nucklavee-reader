@@ -29,6 +29,11 @@ where
     embedder: E,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IngestOptions {
+    pub normalize_bare_callouts: bool,
+}
+
 impl<S, V, E> Library<S, V, E>
 where
     S: storage::DocumentStore,
@@ -44,6 +49,14 @@ where
     }
 
     pub fn ingest(&mut self, source: Source) -> Result<DocumentId> {
+        self.ingest_with_options(source, IngestOptions::default())
+    }
+
+    pub fn ingest_with_options(
+        &mut self,
+        source: Source,
+        options: IngestOptions,
+    ) -> Result<DocumentId> {
         let (markdown, source_descriptor) = match source {
             Source::File(path) => {
                 let ext = path
@@ -82,6 +95,7 @@ where
             parsers::markdown::ParseOptions {
                 source_descriptor: Some(source_descriptor),
                 normalize_repeated_leading_segment: false,
+                normalize_bare_callouts: options.normalize_bare_callouts,
             },
         );
 
