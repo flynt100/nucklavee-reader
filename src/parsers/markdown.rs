@@ -55,17 +55,38 @@ pub struct ParseOptions {
 /// constructs produce diagnostics.
 pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let normalized = normalize_preparse_input(input);
-    // `parse_input` is the canonical source for all offsets produced by the
-    // parser event loop below. Keep every byte range/slice anchored to this
-    // exact string so frontmatter-relative offsets and inline source slices
-    // cannot drift.
-    let parse_input = &normalized.input;
-    let (frontmatter, frontmatter_len) = extract_frontmatter(parse_input);
-    let mut diagnostics: Vec<Diagnostic> = normalized.diagnostics;
+    let parse_input = normalized.input;
+    let mut diagnostics: Vec<Diagnostic> = normalized
+        .diagnostics
+        .into_iter()
+        .map(|d| d.with_range(ByteRange::new(0, input.len())))
+        .collect();
+
+    let (frontmatter, frontmatter_len, inferred_frontmatter) = {
+        let (frontmatter, frontmatter_len) = extract_frontmatter(&parse_input);
+        if frontmatter.is_some() {
+            (frontmatter, frontmatter_len, false)
+        } else if let Some((frontmatter, frontmatter_len)) = infer_probable_frontmatter(&parse_input)
+        {
+            (Some(frontmatter), frontmatter_len, true)
+        } else {
+            (None, 0, false)
+        }
+    };
+
+    if inferred_frontmatter {
+        diagnostics.push(
+            Diagnostic::new(
+                DiagnosticKind::Normalized,
+                "inferred unfenced YAML-like frontmatter block at document start",
+            )
+            .with_range(ByteRange::new(0, frontmatter_len)),
+        );
+    }
 
     let mut body_end = parse_input.len();
     if let Some(dup) =
-        detect_repeated_leading_segment(parse_input, frontmatter_len, frontmatter.as_ref())
+        detect_repeated_leading_segment(&parse_input, frontmatter_len, frontmatter.as_ref())
     {
         let range = ByteRange::new(dup.start, dup.end);
         if opts.normalize_repeated_leading_segment {
@@ -94,7 +115,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
         }
     }
 
-    let parse_body_input = &parse_input[frontmatter_len..body_end];
+    let body_input = &parse_input[frontmatter_len..body_end];
 
     let id: DocumentId = Uuid::new_v4();
     let meta = DocumentMeta {
@@ -115,7 +136,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
-    let parser = CmarkParser::new_ext(parse_body_input, options);
+    let parser = CmarkParser::new_ext(body_input, options);
 
     let mut stack: Vec<Frame> = vec![Frame::Document];
     let mut top_body: Vec<BlockNode> = Vec::new();
@@ -132,7 +153,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
             Event::End(end) => end_tag(
                 end,
                 range,
-                parse_input,
+                &parse_input,
                 &mut stack,
                 &mut top_body,
                 &mut section_path,
