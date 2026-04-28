@@ -117,8 +117,11 @@ const FIXTURE_EXPANSION_EXPECTED_STABLE: &[&str] = &[
     "20_styled_leading_list_items.md",
 ];
 
-const FIXTURE_EXPANSION_EXPECTED_DIAGNOSTIC: &[&str] =
-    &["09_diagnostics.md", "17_common_malformed_variants.md"];
+const FIXTURE_EXPANSION_EXPECTED_DIAGNOSTIC: &[&str] = &[
+    "09_diagnostics.md",
+    "17_common_malformed_variants.md",
+    "21_math_inline_underscore_asterisk.md",
+];
 
 #[test]
 // Phase 2B fixture-expansion classification: stable fixtures must stay diagnostic-free.
@@ -254,6 +257,12 @@ fn roundtrip_phase2b_malformed_tsv_fixture_expected_diagnostic() {
 // Policy A: list items with inline-leading content must survive roundtrip structurally.
 fn roundtrip_styled_leading_list_items_fixture() {
     roundtrip("20_styled_leading_list_items.md");
+}
+
+#[test]
+// Policy C/E: inline math shielding must preserve structure and deterministic emission.
+fn roundtrip_math_inline_underscore_asterisk_fixture() {
+    roundtrip("21_math_inline_underscore_asterisk.md");
 }
 
 #[test]
@@ -441,7 +450,7 @@ fn math_delimiters_fixture_has_stable_golden_output_and_structure() {
     let doc = parse_markdown(&source, opts());
     let emitted = emit_markdown(&doc);
 
-    let expected = "# Math Delimiter Fixture\n\nInline formulas stay inline: $a^2 + b^2 = c^2$, $e^{i\\pi} + 1 = 0$, and $f([x]) = x^2 + y$.\n\nDisplay equations preserve escaped delimiters:\n\n\\[ E = mc^2 \\]\n\nParagraph break between equations.\n\n\\[ \\int_0^1 x^2 , dx = \\frac{1}{3} \\]\n\nMixed inline + display math in one section: $\\alpha + \\beta$ then \\[ \\sum_{k=1}^{n} k = \\frac{n(n+1)}{2} \\]";
+    let expected = "# Math Delimiter Fixture\n\nInline formulas stay inline: $a^2 + b^2 = c^2$, $e^{i\\pi} + 1 = 0$, and $f([x]) = x^2 + y$.\n\nDisplay equations preserve escaped delimiters:\n\n\\[\nE = mc^2\n\\]\n\nParagraph break between equations.\n\n\\[\n\\int_0^1 x^2 \\, dx = \\frac{1}{3}\n\\]\n\nMixed inline + display math in one section: $\\alpha + \\beta$ then \\[\n\\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}\n\\]";
     assert_eq!(
         emitted, expected,
         "golden markdown output changed unexpectedly for math delimiters fixture"
@@ -545,6 +554,22 @@ fn unfenced_frontmatter_is_inferred_and_reported_deterministically() {
     );
 
     assert_deterministic_parse_emit("19_unfenced_frontmatter_block.md", &source, 5);
+}
+
+#[test]
+fn math_inline_underscore_asterisk_fixture_is_deterministic_and_structurally_equivalent() {
+    let (_, source) = load_fixture("21_math_inline_underscore_asterisk.md");
+    let doc1 = parse_markdown(&source, opts());
+    let emitted = emit_markdown(&doc1);
+    let doc2 = parse_markdown(&emitted, opts());
+    let canonical = emit_markdown(&doc2);
+
+    if let Some(diff) = structural_diff(&doc1, &doc2) {
+        panic!(
+            "expected fixture 21 to stay structurally equivalent after reparse, got diff: {diff}\n--- emitted ---\n{emitted}\n--- ir1 ---\n{doc1:#?}\n--- ir2 ---\n{doc2:#?}"
+        );
+    }
+    assert_deterministic_parse_emit("21_math_inline_underscore_asterisk.md", &canonical, 5);
 }
 
 fn walk_ranges(doc: &Document, source_len: usize) {

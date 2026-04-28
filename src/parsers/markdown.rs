@@ -13,6 +13,7 @@
 //! indented code blocks) is surfaced as a typed [`Diagnostic`] rather than
 //! silently dropped or flattened.
 
+use std::collections::VecDeque;
 use std::ops::Range;
 
 use chrono::Utc;
@@ -108,6 +109,11 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     }
 
     let body_input = &parse_input[frontmatter_len..body_end];
+    let math_shield = shield_math_segments(body_input, frontmatter_len);
+    diagnostics.extend(math_shield.diagnostics);
+    let parse_body_input = math_shield.shielded_input;
+    let parse_stream_input = format!("{}{}", &parse_input[..frontmatter_len], parse_body_input);
+    let mut math_restore = MathRestoreState::new(math_shield.payloads);
 
     let id: DocumentId = Uuid::new_v4();
     let meta = DocumentMeta {
@@ -128,7 +134,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
-    let parser = CmarkParser::new_ext(body_input, options);
+    let parser = CmarkParser::new_ext(&parse_stream_input[frontmatter_len..], options);
 
     let mut stack: Vec<Frame> = vec![Frame::Document];
     let mut top_body: Vec<BlockNode> = Vec::new();
@@ -138,14 +144,14 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
 
     for (event, range) in parser.into_offset_iter() {
         // `into_offset_iter()` ranges are relative to `parse_body_input`; map
-        // back to `parse_input` by adding `frontmatter_len`.
+        // back to stream offsets by adding `frontmatter_len`.
         let range = (range.start + frontmatter_len)..(range.end + frontmatter_len);
         match event {
             Event::Start(tag) => start_tag(tag, range, &mut stack, &section_path, id),
             Event::End(end) => end_tag(
                 end,
                 range,
-                &parse_input,
+                &parse_stream_input,
                 &mut stack,
                 &mut top_body,
                 &mut section_path,
@@ -154,17 +160,25 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 id,
                 opts.normalize_bare_callouts,
             ),
-            Event::Text(s) => push_inline(
-                &mut stack,
-                &mut top_body,
-                &mut diagnostics,
-                range.clone(),
-                id,
-                Inline::Text(restore_escaped_math_brackets(
-                    s.into_string(),
-                    &parse_input[range.start..range.end],
-                )),
-            ),
+            Event::Text(s) => {
+                let restored = restore_math_placeholders(
+                    restore_escaped_math_brackets(
+                        s.into_string(),
+                        &parse_stream_input[range.start..range.end],
+                    ),
+                    &mut math_restore,
+                    &mut diagnostics,
+                    range.clone(),
+                );
+                push_inline(
+                    &mut stack,
+                    &mut top_body,
+                    &mut diagnostics,
+                    range,
+                    id,
+                    Inline::Text(restored),
+                )
+            }
             Event::Code(s) => push_inline(
                 &mut stack,
                 &mut top_body,
@@ -243,7 +257,6 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
             }
         }
     }
-
     doc.body = top_body;
     doc.meta.title = extract_title(&doc.body);
     doc.diagnostics = diagnostics;
@@ -279,6 +292,26 @@ struct NormalizedInput {
     diagnostics: Vec<Diagnostic>,
 }
 
+#[derive(Debug, Default)]
+struct ShieldedMathInput {
+    shielded_input: String,
+    payloads: Vec<String>,
+    diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug)]
+struct MathRestoreState {
+    pending: VecDeque<String>,
+}
+
+impl MathRestoreState {
+    fn new(payloads: Vec<String>) -> Self {
+        Self {
+            pending: VecDeque::from(payloads),
+        }
+    }
+}
+
 fn normalize_preparse_input(input: &str) -> NormalizedInput {
     let mut diagnostics = Vec::new();
     if appears_single_line_escaped_markdown(input) {
@@ -308,6 +341,161 @@ fn appears_single_line_escaped_markdown(input: &str) -> bool {
 
 fn decode_escaped_newlines(input: &str) -> String {
     input.replace("\\r\\n", "\n").replace("\\n", "\n")
+}
+
+const MATH_PLACEHOLDER: char = '\u{00A4}';
+
+fn shield_math_segments(input: &str, range_offset: usize) -> ShieldedMathInput {
+    let mut out = String::with_capacity(input.len());
+    let mut payloads = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut i = 0usize;
+
+    while i < input.len() {
+        if let Some((end, payload, diagnostic)) = try_match_math_span(input, i) {
+            if let Some(message) = diagnostic {
+                diagnostics.push(
+                    Diagnostic::new(DiagnosticKind::Normalized, message)
+                        .with_range(ByteRange::new(range_offset + i, range_offset + end)),
+                );
+                out.push_str(&input[i..end]);
+            } else {
+                payloads.push(payload);
+                out.push(MATH_PLACEHOLDER);
+            }
+            i = end;
+            continue;
+        }
+
+        let mut iter = input[i..].char_indices();
+        let (_, ch) = iter
+            .next()
+            .expect("scanner should always have remaining char");
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+
+    ShieldedMathInput {
+        shielded_input: out,
+        payloads,
+        diagnostics,
+    }
+}
+
+fn try_match_math_span(input: &str, start: usize) -> Option<(usize, String, Option<String>)> {
+    if input[start..].starts_with('$') && !is_escaped_delimiter(input, start) {
+        let end = find_unescaped_char(input, start + 1, '$');
+        return match end {
+            Some(close) => {
+                if input[start + 1..close].is_empty() || input[start + 1..close].contains('\n') {
+                    Some((
+                        close + 1,
+                        String::new(),
+                        Some("skipped ambiguous inline math span during shielding".to_string()),
+                    ))
+                } else {
+                    Some((close + 1, input[start..close + 1].to_string(), None))
+                }
+            }
+            None => Some((
+                start + 1,
+                String::new(),
+                Some("found unmatched '$' delimiter; leaving text unchanged".to_string()),
+            )),
+        };
+    }
+
+    if input[start..].starts_with("\\[") && !is_escaped_delimiter(input, start) {
+        let end = find_unescaped_substring_before_paragraph_break(input, start + 2, "\\]");
+        return match end {
+            Some(close_start) => Some((
+                close_start + 2,
+                input[start..close_start + 2].to_string(),
+                None,
+            )),
+            None => Some((
+                start + 2,
+                String::new(),
+                Some("found unmatched '\\\\[' delimiter; leaving text unchanged".to_string()),
+            )),
+        };
+    }
+
+    None
+}
+
+fn is_escaped_delimiter(input: &str, idx: usize) -> bool {
+    let bytes = input.as_bytes();
+    let mut slash_count = 0usize;
+    let mut p = idx;
+    while p > 0 && bytes[p - 1] == b'\\' {
+        slash_count += 1;
+        p -= 1;
+    }
+    slash_count % 2 == 1
+}
+
+fn find_unescaped_char(input: &str, mut idx: usize, target: char) -> Option<usize> {
+    while idx < input.len() {
+        let mut iter = input[idx..].char_indices();
+        let (rel, ch) = iter.next()?;
+        let at = idx + rel;
+        if ch == target && !is_escaped_delimiter(input, at) {
+            return Some(at);
+        }
+        idx = at + ch.len_utf8();
+    }
+    None
+}
+
+fn find_unescaped_substring_before_paragraph_break(
+    input: &str,
+    mut idx: usize,
+    needle: &str,
+) -> Option<usize> {
+    while idx < input.len() {
+        let rel = input[idx..].find(needle)?;
+        let at = idx + rel;
+        if input[idx..at].contains("\n\n") {
+            return None;
+        }
+        if !is_escaped_delimiter(input, at) {
+            return Some(at);
+        }
+        idx = at + needle.len();
+    }
+    None
+}
+
+fn restore_math_placeholders(
+    parsed_text: String,
+    restore: &mut MathRestoreState,
+    diagnostics: &mut Vec<Diagnostic>,
+    range: Range<usize>,
+) -> String {
+    if !parsed_text.contains(MATH_PLACEHOLDER) {
+        return parsed_text;
+    }
+    let mut out = String::with_capacity(parsed_text.len());
+    for ch in parsed_text.chars() {
+        if ch == MATH_PLACEHOLDER {
+            if let Some(payload) = restore.pending.pop_front() {
+                out.push_str(&payload);
+            } else {
+                diagnostics.push(
+                    Diagnostic::new(
+                        DiagnosticKind::Normalized,
+                        "math shielding restore placeholder had no matching payload; leaving placeholder as-is",
+                    )
+                    .with_range(ByteRange::new(range.start, range.end)),
+                );
+                out.push(ch);
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 fn infer_probable_frontmatter(input: &str) -> Option<(Frontmatter, usize)> {
