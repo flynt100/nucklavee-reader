@@ -659,10 +659,12 @@ fn end_tag(
 
     match (frame, end) {
         (Frame::Paragraph { inlines, start }, TagEnd::Paragraph) => {
-            let range = ByteRange::new(start, end_range.end);
-            let prov = Provenance::new(doc_id)
-                .with_range(range)
-                .with_section_path(section_path.clone());
+            let prov = standard_prov(
+                doc_id,
+                section_path,
+                start..end_range.end,
+                ProvSectionPathBranch::Current,
+            );
             let source_slice = &source[start..end_range.end];
             if normalize_bare_callouts && !in_blockquote(stack) {
                 if let Some(blockquote) =
@@ -722,14 +724,14 @@ fn end_tag(
             heading_levels.push(level);
             section_path.push(title_text);
 
-            let range = ByteRange::new(start, end_range.end);
             // Attribute this heading with the section path *above* it so the
             // first heading under "root" shows an empty path.
-            let mut parent_path = section_path.clone();
-            parent_path.pop();
-            let prov = Provenance::new(doc_id)
-                .with_range(range)
-                .with_section_path(parent_path);
+            let prov = standard_prov(
+                doc_id,
+                section_path,
+                start..end_range.end,
+                ProvSectionPathBranch::HeadingParent,
+            );
             append_block(
                 stack,
                 top_body,
@@ -755,10 +757,12 @@ fn end_tag(
             // stores only the logical content and the emitter can add a
             // single newline before the closing fence unconditionally.
             let content = content.trim_end_matches('\n').to_string();
-            let range = ByteRange::new(start, end_range.end);
-            let prov = Provenance::new(doc_id)
-                .with_range(range)
-                .with_section_path(section_path.clone());
+            let prov = standard_prov(
+                doc_id,
+                section_path,
+                start..end_range.end,
+                ProvSectionPathBranch::Current,
+            );
             append_block(
                 stack,
                 top_body,
@@ -766,10 +770,12 @@ fn end_tag(
             );
         }
         (Frame::BlockQuote { blocks, start }, TagEnd::BlockQuote) => {
-            let range = ByteRange::new(start, end_range.end);
-            let prov = Provenance::new(doc_id)
-                .with_range(range)
-                .with_section_path(section_path.clone());
+            let prov = standard_prov(
+                doc_id,
+                section_path,
+                start..end_range.end,
+                ProvSectionPathBranch::Current,
+            );
             append_block(
                 stack,
                 top_body,
@@ -784,10 +790,12 @@ fn end_tag(
             },
             TagEnd::List(_),
         ) => {
-            let range = ByteRange::new(start, end_range.end);
-            let prov = Provenance::new(doc_id)
-                .with_range(range)
-                .with_section_path(section_path.clone());
+            let prov = standard_prov(
+                doc_id,
+                section_path,
+                start..end_range.end,
+                ProvSectionPathBranch::Current,
+            );
             append_block(
                 stack,
                 top_body,
@@ -808,10 +816,12 @@ fn end_tag(
             },
             TagEnd::Table,
         ) => {
-            let range = ByteRange::new(start, end_range.end);
-            let prov = Provenance::new(doc_id)
-                .with_range(range)
-                .with_section_path(section_path.clone());
+            let prov = standard_prov(
+                doc_id,
+                section_path,
+                start..end_range.end,
+                ProvSectionPathBranch::Current,
+            );
             append_block(
                 stack,
                 top_body,
@@ -984,6 +994,24 @@ fn prov_for(doc_id: DocumentId, section_path: &[String], range: Range<usize>) ->
     Provenance::new(doc_id)
         .with_range(ByteRange::new(range.start, range.end))
         .with_section_path(section_path.to_vec())
+}
+
+enum ProvSectionPathBranch {
+    Current,
+    HeadingParent,
+}
+
+fn standard_prov(
+    doc_id: DocumentId,
+    section_path: &[String],
+    range: Range<usize>,
+    branch: ProvSectionPathBranch,
+) -> Provenance {
+    let mut path = section_path.to_vec();
+    if matches!(branch, ProvSectionPathBranch::HeadingParent) {
+        path.pop();
+    }
+    prov_for(doc_id, &path, range)
 }
 
 fn heading_level_to_u8(level: HeadingLevel) -> u8 {
