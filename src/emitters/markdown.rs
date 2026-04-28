@@ -226,12 +226,7 @@ fn collect_math_bracket_span(inlines: &[Inline]) -> Option<(usize, String)> {
         match &inlines[idx] {
             Inline::Text(s) if s.trim() == "]" => {
                 let trimmed = inner.trim();
-                let looks_mathy = trimmed.contains('\\')
-                    || trimmed.contains('=')
-                    || trimmed.contains('^')
-                    || trimmed.contains('_')
-                    || trimmed.contains('{')
-                    || trimmed.contains('}');
+                let looks_mathy = looks_like_math_inline(trimmed);
                 if !looks_mathy || trimmed.is_empty() {
                     return None;
                 }
@@ -264,12 +259,7 @@ fn emit_display_math_paragraph(content: &[Inline], out: &mut String) -> bool {
         return false;
     }
 
-    let looks_mathy = inner.contains('\\')
-        || inner.contains('=')
-        || inner.contains('^')
-        || inner.contains('_')
-        || inner.contains('{')
-        || inner.contains('}');
+    let looks_mathy = looks_like_math_inline(inner);
     if !looks_mathy {
         return false;
     }
@@ -299,6 +289,15 @@ fn parse_display_math_inner(trimmed: &str) -> Option<&str> {
         return None;
     }
     Some(trimmed[start_idx..end_idx].trim())
+}
+
+fn looks_like_math_inline(s: &str) -> bool {
+    s.contains('\\')
+        || s.contains('=')
+        || s.contains('^')
+        || s.contains('_')
+        || s.contains('{')
+        || s.contains('}')
 }
 
 fn emit_inline(inline: &Inline, out: &mut String) {
@@ -425,12 +424,7 @@ fn escape_text(s: &str) -> String {
         if let Some(tail) = rest.strip_prefix('[') {
             if let Some(close) = tail.find(']') {
                 let inner = &tail[..close];
-                let looks_mathy = inner.contains('\\')
-                    || inner.contains('=')
-                    || inner.contains('^')
-                    || inner.contains('_')
-                    || inner.contains('{')
-                    || inner.contains('}');
+                let looks_mathy = looks_like_math_inline(inner);
                 if looks_mathy {
                     out.push_str("\\[");
                     out.push_str(inner);
