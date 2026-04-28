@@ -257,11 +257,9 @@ fn emit_display_math_paragraph(content: &[Inline], out: &mut String) -> bool {
     }
 
     let trimmed = flat.trim();
-    if !(trimmed.starts_with('[') && trimmed.ends_with(']')) {
+    let Some(inner) = parse_display_math_inner(trimmed) else {
         return false;
-    }
-
-    let inner = trimmed.trim_start_matches('[').trim_end_matches(']').trim();
+    };
     if inner.is_empty() {
         return false;
     }
@@ -280,6 +278,27 @@ fn emit_display_math_paragraph(content: &[Inline], out: &mut String) -> bool {
     out.push_str(inner);
     out.push_str(" \\]");
     true
+}
+
+fn parse_display_math_inner(trimmed: &str) -> Option<&str> {
+    let mut start = trimmed;
+    while let Some(rest) = start.strip_prefix('\\') {
+        start = rest;
+    }
+    start = start.strip_prefix('[')?;
+
+    let mut end = trimmed;
+    while let Some(rest) = end.strip_suffix('\\') {
+        end = rest;
+    }
+    end = end.strip_suffix(']')?;
+
+    let start_idx = trimmed.len() - start.len();
+    let end_idx = end.len();
+    if end_idx < start_idx {
+        return None;
+    }
+    Some(trimmed[start_idx..end_idx].trim())
 }
 
 fn emit_inline(inline: &Inline, out: &mut String) {
