@@ -277,6 +277,42 @@ fn provenance_ranges_are_in_bounds() {
     walk_ranges(&doc, source.len());
 }
 
+
+fn assert_resolved_idempotent_roundtrip(label: &str, source: &str, iterations: usize) {
+    assert!(
+        iterations >= 2,
+        "{label}: iterations must be >= 2 to prove idempotent convergence"
+    );
+
+    let source_doc = parse_markdown(source, opts());
+    let first_emitted = emit_markdown(&source_doc);
+    let mut current_doc = parse_markdown(&first_emitted, opts());
+    let mut previous_emitted: Option<String> = None;
+
+    for i in 1..=iterations {
+        let emitted = emit_markdown(&current_doc);
+        let reparsed = parse_markdown(&emitted, opts());
+        let diff = structural_diff(&current_doc, &reparsed);
+
+        assert!(
+            diff.is_none(),
+            "{label}: expected no structural drift after convergence baseline; found diff at iteration {i}: {diff:?}"
+        );
+        assert!(
+            validate(&reparsed, Some(emitted.len())).is_ok(),
+            "{label}: reparsed document failed validation at iteration {i}"
+        );
+
+        if let Some(prev) = &previous_emitted {
+            assert_eq!(
+                &emitted, prev,
+                "{label}: emission changed after convergence baseline at iteration {i}"
+            );
+        }
+        previous_emitted = Some(emitted);
+        current_doc = reparsed;
+    }
+}
 fn assert_deterministic_parse_emit(label: &str, source: &str, iterations: usize) {
     assert!(iterations > 0, "iterations must be > 0");
 
@@ -348,6 +384,28 @@ fn parse_emit_is_deterministic_for_phase2b_fallback_fixtures() {
         "expected malformed phase-2B fixture to produce diagnostics"
     );
     assert_deterministic_parse_emit(&label_bad, &source_bad, 5);
+}
+
+
+#[test]
+// Policy E (Finding 3 regression): pass criteria is zero structural diff and stable emission across repeated parse->emit cycles.
+fn parse_emit_converges_for_styled_leading_list_fixture_after_list_item_root_cause_fix() {
+    let (label, source) = load_fixture("20_styled_leading_list.md");
+    assert_resolved_idempotent_roundtrip(&label, &source, 5);
+}
+
+#[test]
+// Policy E (Finding 3 regression): pass criteria is idempotent convergence for underscore-heavy math forms with no iterative drift.
+fn parse_emit_converges_for_math_underscore_fixture_after_math_root_cause_fix() {
+    let (label, source) = load_fixture("21_math_underscore.md");
+    assert_resolved_idempotent_roundtrip(&label, &source, 5);
+}
+
+#[test]
+// Policy E (Finding 3 regression): pass criteria is fixed-point parse->emit behavior for real-world mixed markdown after root-cause fixes.
+fn parse_emit_converges_for_real_world_fixture_after_root_cause_fixes() {
+    let (label, source) = load_fixture("22_real_world_mixed.md");
+    assert_resolved_idempotent_roundtrip(&label, &source, 5);
 }
 
 #[test]
