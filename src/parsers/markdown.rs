@@ -143,8 +143,10 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let mut heading_levels: Vec<u8> = Vec::new();
 
     for (event, range) in parser.into_offset_iter() {
-        // `into_offset_iter()` ranges are relative to `parse_body_input`; map
-        // back to stream offsets by adding `frontmatter_len`.
+        // `into_offset_iter()` ranges are relative to `body_input` (the
+        // frontmatter-stripped body we parse, after math shielding). Translate
+        // them back into `parse_stream_input`/`parse_input` coordinates by
+        // adding `frontmatter_len`.
         let range = (range.start + frontmatter_len)..(range.end + frontmatter_len);
         match event {
             Event::Start(tag) => start_tag(tag, range, &mut stack, &section_path, id),
