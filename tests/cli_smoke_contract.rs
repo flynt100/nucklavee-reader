@@ -35,7 +35,7 @@ fn ingest_emit_rejects_unsupported_format_with_expected_parse_error() {
         "missing clap invalid-format boundary message: {stderr}"
     );
     assert!(
-        stderr.contains(phase2_contract::UNSUPPORTED_FORMAT_HTML),
+        stderr.contains(&phase2_contract::unsupported_format_message("html")),
         "missing domain-specific invalid-format reason: {stderr}"
     );
 }
