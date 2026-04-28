@@ -5,6 +5,8 @@
 
 use std::process::Command;
 
+use nucklavee::phase2_contract;
+
 fn cli() -> Command {
     Command::new(env!("CARGO_BIN_EXE_nucklavee"))
 }
@@ -33,7 +35,7 @@ fn ingest_emit_rejects_unsupported_format_with_expected_parse_error() {
         "missing clap invalid-format boundary message: {stderr}"
     );
     assert!(
-        stderr.contains("unsupported format 'html'. supported: markdown"),
+        stderr.contains(phase2_contract::UNSUPPORTED_FORMAT_HTML),
         "missing domain-specific invalid-format reason: {stderr}"
     );
 }
@@ -55,7 +57,10 @@ fn emit_by_id_is_disabled_in_phase2_with_expected_error() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("error: invalid input: emit --id is disabled in Phase 2 because document IDs are process-local. use `ingest-emit <path> --format markdown`"),
+        stderr.contains(&format!(
+            "error: invalid input: {}",
+            phase2_contract::EMIT_BY_ID_DISABLED
+        )),
         "unexpected emit-disabled boundary message: {stderr}"
     );
 }
@@ -71,7 +76,10 @@ fn query_command_reports_phase2_not_implemented_contract() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("error: not implemented: query is not implemented in Phase 2 (markdown ingest/emit only)"),
+        stderr.contains(&format!(
+            "error: not implemented: {}",
+            phase2_contract::QUERY_NOT_IMPLEMENTED
+        )),
         "unexpected query boundary message: {stderr}"
     );
 }
@@ -87,7 +95,48 @@ fn context_window_command_reports_phase2_not_implemented_contract() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("error: not implemented: context_window is not implemented in Phase 2 (markdown ingest/emit only)"),
+        stderr.contains(&format!(
+            "error: not implemented: {}",
+            phase2_contract::CONTEXT_WINDOW_NOT_IMPLEMENTED
+        )),
         "unexpected context-window boundary message: {stderr}"
+    );
+}
+
+#[test]
+fn html_command_reports_phase2_not_implemented_contract() {
+    let output = cli()
+        .arg("html")
+        .output()
+        .expect("failed to run nucklavee binary");
+
+    assert_eq!(output.status.code(), Some(1));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "error: not implemented: {}",
+            phase2_contract::HTML_PIPELINE_NOT_IMPLEMENTED
+        )),
+        "unexpected html boundary message: {stderr}"
+    );
+}
+
+#[test]
+fn pdf_command_reports_phase2_not_implemented_contract() {
+    let output = cli()
+        .arg("pdf")
+        .output()
+        .expect("failed to run nucklavee binary");
+
+    assert_eq!(output.status.code(), Some(1));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "error: not implemented: {}",
+            phase2_contract::PDF_PIPELINE_NOT_IMPLEMENTED
+        )),
+        "unexpected pdf boundary message: {stderr}"
     );
 }

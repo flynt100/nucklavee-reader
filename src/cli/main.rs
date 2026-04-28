@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use nucklavee::chunking::ChunkId;
 use nucklavee::embedder::Embedder;
 use nucklavee::ir::{DocumentId, Source};
+use nucklavee::phase2_contract;
 use nucklavee::storage::memory::InMemoryDocumentStore;
 use nucklavee::vector::VectorIndex;
 use nucklavee::{Format, IngestOptions, Library, Result};
@@ -109,25 +110,25 @@ fn run_phase2_service(
             path,
             normalize_bare_callouts,
         } => run_ingest(lib, &path, normalize_bare_callouts),
-        Commands::Emit { id: _, format: _ } => Err(nucklavee::Error::InvalidInput(
-            "emit --id is disabled in Phase 2 because document IDs are process-local. use `ingest-emit <path> --format markdown`".into(),
+        Commands::Emit { id: _, format: _ } => Err(phase2_contract::invalid_input(
+            phase2_contract::EMIT_BY_ID_DISABLED,
         )),
         Commands::IngestEmit {
             path,
             format,
             normalize_bare_callouts,
         } => run_ingest_emit(lib, &path, format, normalize_bare_callouts),
-        Commands::Query => Err(nucklavee::Error::NotImplemented(
-            "query is not implemented in Phase 2 (markdown ingest/emit only)",
+        Commands::Query => Err(phase2_contract::not_implemented(
+            phase2_contract::QUERY_NOT_IMPLEMENTED,
         )),
-        Commands::ContextWindow => Err(nucklavee::Error::NotImplemented(
-            "context_window is not implemented in Phase 2 (markdown ingest/emit only)",
+        Commands::ContextWindow => Err(phase2_contract::not_implemented(
+            phase2_contract::CONTEXT_WINDOW_NOT_IMPLEMENTED,
         )),
-        Commands::Html => Err(nucklavee::Error::NotImplemented(
-            "html pipeline is not implemented in Phase 2; markdown only",
+        Commands::Html => Err(phase2_contract::not_implemented(
+            phase2_contract::HTML_PIPELINE_NOT_IMPLEMENTED,
         )),
-        Commands::Pdf => Err(nucklavee::Error::NotImplemented(
-            "pdf pipeline is not implemented in Phase 2; markdown only",
+        Commands::Pdf => Err(phase2_contract::not_implemented(
+            phase2_contract::PDF_PIPELINE_NOT_IMPLEMENTED,
         )),
     }
 }
@@ -167,8 +168,8 @@ fn run_ingest_emit(
 fn parse_format(raw: &str) -> Result<Format> {
     match raw {
         "markdown" => Ok(Format::Markdown),
-        _ => Err(nucklavee::Error::InvalidInput(format!(
-            "unsupported format '{raw}'. supported: markdown"
-        ))),
+        _ => Err(phase2_contract::invalid_input(
+            phase2_contract::unsupported_format_message(raw),
+        )),
     }
 }
