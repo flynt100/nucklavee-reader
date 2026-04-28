@@ -6,6 +6,7 @@ pub mod embedder;
 pub mod emitters;
 pub mod ir;
 pub mod parsers;
+pub mod phase2_contract;
 pub mod pipeline;
 pub mod storage;
 pub mod vector;
@@ -108,8 +109,8 @@ where
     }
 
     pub fn query(&self, _text: &str, _limit: usize) -> Result<Vec<Chunk>> {
-        Err(Error::NotImplemented(
-            "query is not implemented in Phase 2 (markdown ingest/emit only)",
+        Err(phase2_contract::not_implemented(
+            phase2_contract::QUERY_NOT_IMPLEMENTED,
         ))
     }
 
@@ -122,18 +123,18 @@ where
 
         match format {
             Format::Markdown => Ok(emitters::markdown::emit_markdown(&document)),
-            Format::Html => Err(Error::NotImplemented(
-                "unsupported format 'html'. supported: markdown",
+            Format::Html => Err(phase2_contract::not_implemented(
+                phase2_contract::UNSUPPORTED_FORMAT_HTML,
             )),
-            Format::PlainText => Err(Error::NotImplemented(
-                "unsupported format 'text'. supported: markdown",
+            Format::PlainText => Err(phase2_contract::not_implemented(
+                phase2_contract::UNSUPPORTED_FORMAT_TEXT,
             )),
         }
     }
 
     pub fn context_window(&self, _query: &str, _token_budget: usize) -> Result<String> {
-        Err(Error::NotImplemented(
-            "context_window is not implemented in Phase 2 (markdown ingest/emit only)",
+        Err(phase2_contract::not_implemented(
+            phase2_contract::CONTEXT_WINDOW_NOT_IMPLEMENTED,
         ))
     }
 
