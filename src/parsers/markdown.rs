@@ -141,7 +141,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
         // back to `parse_input` by adding `frontmatter_len`.
         let range = (range.start + frontmatter_len)..(range.end + frontmatter_len);
         match event {
-            Event::Start(tag) => start_tag(tag, range, &mut stack),
+            Event::Start(tag) => start_tag(tag, range, &mut stack, &section_path, id),
             Event::End(end) => end_tag(
                 end,
                 range,
@@ -200,6 +200,13 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 Inline::LineBreak,
             ),
             Event::Rule => {
+                flush_item_pending_inlines_if_block_boundary(
+                    &mut stack,
+                    &Tag::Paragraph,
+                    &section_path,
+                    id,
+                    range.start,
+                );
                 let prov = prov_for(id, &section_path, range.clone());
                 append_block(
                     &mut stack,
@@ -488,6 +495,8 @@ enum Frame {
     },
     Item {
         blocks: Vec<BlockNode>,
+        pending_inlines: Vec<Inline>,
+        pending_start: Option<usize>,
     },
     Table {
         headers: Vec<Vec<Inline>>,
@@ -520,7 +529,15 @@ enum Frame {
     Skip,
 }
 
-fn start_tag(tag: Tag<'_>, range: Range<usize>, stack: &mut Vec<Frame>) {
+fn start_tag(
+    tag: Tag<'_>,
+    range: Range<usize>,
+    stack: &mut Vec<Frame>,
+    section_path: &[String],
+    doc_id: DocumentId,
+) {
+    flush_item_pending_inlines_if_block_boundary(stack, &tag, section_path, doc_id, range.start);
+
     match tag {
         Tag::Paragraph => stack.push(Frame::Paragraph {
             inlines: Vec::new(),
@@ -557,7 +574,11 @@ fn start_tag(tag: Tag<'_>, range: Range<usize>, stack: &mut Vec<Frame>) {
             items: Vec::new(),
             start: range.start,
         }),
-        Tag::Item => stack.push(Frame::Item { blocks: Vec::new() }),
+        Tag::Item => stack.push(Frame::Item {
+            blocks: Vec::new(),
+            pending_inlines: Vec::new(),
+            pending_start: None,
+        }),
         Tag::Table(_) => stack.push(Frame::Table {
             headers: Vec::new(),
             rows: Vec::new(),
@@ -610,6 +631,51 @@ fn start_tag(tag: Tag<'_>, range: Range<usize>, stack: &mut Vec<Frame>) {
             stack.push(Frame::Skip);
         }
     }
+}
+
+fn flush_item_pending_inlines_if_block_boundary(
+    stack: &mut [Frame],
+    tag: &Tag<'_>,
+    section_path: &[String],
+    doc_id: DocumentId,
+    boundary_end: usize,
+) {
+    let is_block_boundary = matches!(
+        tag,
+        Tag::Paragraph
+            | Tag::Heading { .. }
+            | Tag::BlockQuote
+            | Tag::CodeBlock(_)
+            | Tag::List(_)
+            | Tag::Table(_)
+            | Tag::HtmlBlock
+            | Tag::MetadataBlock(_)
+            | Tag::FootnoteDefinition(_)
+    );
+    if !is_block_boundary {
+        return;
+    }
+
+    let Some(Frame::Item {
+        blocks,
+        pending_inlines,
+        pending_start,
+    }) = stack.last_mut()
+    else {
+        return;
+    };
+
+    if pending_inlines.is_empty() {
+        return;
+    }
+
+    let start = pending_start.unwrap_or(boundary_end);
+    let prov = Provenance::new(doc_id)
+        .with_range(ByteRange::new(start, boundary_end.max(start)))
+        .with_section_path(section_path.to_vec());
+    let content = std::mem::take(pending_inlines);
+    *pending_start = None;
+    blocks.push(BlockNode::new(Block::Paragraph { content }, prov));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -802,7 +868,29 @@ fn end_tag(
                 BlockNode::new(Block::List { ordered, items }, prov),
             );
         }
-        (Frame::Item { blocks }, TagEnd::Item) => {
+        (
+            Frame::Item {
+                mut blocks,
+                pending_inlines,
+                pending_start,
+            },
+            TagEnd::Item,
+        ) => {
+            if !pending_inlines.is_empty() {
+                let start = pending_start.unwrap_or(end_range.end);
+                let prov = standard_prov(
+                    doc_id,
+                    section_path,
+                    start..end_range.end.max(start),
+                    ProvSectionPathBranch::Current,
+                );
+                blocks.push(BlockNode::new(
+                    Block::Paragraph {
+                        content: pending_inlines,
+                    },
+                    prov,
+                ));
+            }
             if let Some(Frame::List { items, .. }) = stack.last_mut() {
                 items.push(ListItem { content: blocks });
             }
@@ -916,7 +1004,7 @@ fn push_inline(
 
     // Inline must land in some inline-collecting frame. If there is none,
     // promote it to a paragraph and record a diagnostic.
-    if !attach_inline_checked(stack, inline.clone()) {
+    if !attach_inline_checked(stack, inline.clone(), Some(range.start)) {
         let prov = Provenance::new(doc_id).with_range(ByteRange::new(range.start, range.end));
         diagnostics.push(Diagnostic::new(
             DiagnosticKind::Lossy,
@@ -937,7 +1025,7 @@ fn push_inline(
 
 /// Attach an inline to the innermost inline-collecting frame. Returns `true`
 /// if a frame was found.
-fn attach_inline_checked(stack: &mut [Frame], inline: Inline) -> bool {
+fn attach_inline_checked(stack: &mut [Frame], inline: Inline, range_start: Option<usize>) -> bool {
     for frame in stack.iter_mut().rev() {
         match frame {
             Frame::Paragraph { inlines, .. }
@@ -946,6 +1034,17 @@ fn attach_inline_checked(stack: &mut [Frame], inline: Inline) -> bool {
             | Frame::Link { inlines, .. }
             | Frame::TableCell { inlines } => {
                 inlines.push(inline);
+                return true;
+            }
+            Frame::Item {
+                pending_inlines,
+                pending_start,
+                ..
+            } => {
+                if pending_start.is_none() {
+                    *pending_start = range_start;
+                }
+                pending_inlines.push(inline);
                 return true;
             }
             Frame::CodeBlock { content, .. } => {
@@ -963,7 +1062,7 @@ fn attach_inline_checked(stack: &mut [Frame], inline: Inline) -> bool {
 }
 
 fn attach_inline(stack: &mut [Frame], inline: Inline) {
-    attach_inline_checked(stack, inline);
+    attach_inline_checked(stack, inline, None);
 }
 
 fn in_blockquote(stack: &[Frame]) -> bool {
@@ -976,7 +1075,7 @@ fn in_blockquote(stack: &[Frame]) -> bool {
 fn append_block(stack: &mut [Frame], top_body: &mut Vec<BlockNode>, node: BlockNode) {
     for frame in stack.iter_mut().rev() {
         match frame {
-            Frame::BlockQuote { blocks, .. } | Frame::Item { blocks } => {
+            Frame::BlockQuote { blocks, .. } | Frame::Item { blocks, .. } => {
                 blocks.push(node);
                 return;
             }

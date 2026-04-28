@@ -113,13 +113,12 @@ const FIXTURE_EXPANSION_EXPECTED_STABLE: &[&str] = &[
     "13_syntax_preservation.md",
     "14_math_delimiters.md",
     "16_escape_boundaries.md",
+    "15_nested_mixed_structures.md",
+    "20_styled_leading_list_items.md",
 ];
 
-const FIXTURE_EXPANSION_EXPECTED_DIAGNOSTIC: &[&str] = &[
-    "09_diagnostics.md",
-    "15_nested_mixed_structures.md",
-    "17_common_malformed_variants.md",
-];
+const FIXTURE_EXPANSION_EXPECTED_DIAGNOSTIC: &[&str] =
+    &["09_diagnostics.md", "17_common_malformed_variants.md"];
 
 #[test]
 // Phase 2B fixture-expansion classification: stable fixtures must stay diagnostic-free.
@@ -222,9 +221,9 @@ fn roundtrip_math_delimiters_fixture() {
 }
 
 #[test]
-// Policy E: expected diagnostic behavior for deeply nested mixed list/blockquote/table interactions
-fn roundtrip_nested_mixed_structures_fixture_expected_diagnostic() {
-    roundtrip_expected_diagnostic("15_nested_mixed_structures.md");
+// Policy E: nested mixed list/blockquote/table interactions should remain structurally stable.
+fn roundtrip_nested_mixed_structures_fixture() {
+    roundtrip("15_nested_mixed_structures.md");
 }
 
 #[test]
@@ -249,6 +248,12 @@ fn roundtrip_phase2b_tsv_like_fixture() {
 // Policy E: ambiguous tabular shape should fall back with diagnostics and remain deterministic
 fn roundtrip_phase2b_malformed_tsv_fixture_expected_diagnostic() {
     roundtrip_expected_diagnostic("19_phase2b_tsv_malformed.md");
+}
+
+#[test]
+// Policy A: list items with inline-leading content must survive roundtrip structurally.
+fn roundtrip_styled_leading_list_items_fixture() {
+    roundtrip("20_styled_leading_list_items.md");
 }
 
 #[test]
