@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::Result;
 use crate::chunking::Chunk;
@@ -17,21 +17,23 @@ struct InMemoryState {
     chunks_by_doc: HashMap<DocumentId, Vec<Chunk>>,
 }
 
+impl InMemoryDocumentStore {
+    fn state(&self) -> Result<MutexGuard<'_, InMemoryState>> {
+        self.inner
+            .lock()
+            .map_err(|_| crate::Error::Storage("in-memory store lock poisoned".to_string()))
+    }
+}
+
 impl DocumentStore for InMemoryDocumentStore {
     fn upsert_document(&self, document: &Document) -> Result<()> {
-        let mut state = self
-            .inner
-            .lock()
-            .map_err(|_| crate::Error::Storage("in-memory store lock poisoned".to_string()))?;
+        let mut state = self.state()?;
         state.documents.insert(document.meta.id, document.clone());
         Ok(())
     }
 
     fn get_document(&self, id: DocumentId) -> Result<Document> {
-        let state = self
-            .inner
-            .lock()
-            .map_err(|_| crate::Error::Storage("in-memory store lock poisoned".to_string()))?;
+        let state = self.state()?;
         state
             .documents
             .get(&id)
@@ -40,10 +42,7 @@ impl DocumentStore for InMemoryDocumentStore {
     }
 
     fn insert_chunks(&self, chunks: &[Chunk]) -> Result<()> {
-        let mut state = self
-            .inner
-            .lock()
-            .map_err(|_| crate::Error::Storage("in-memory store lock poisoned".to_string()))?;
+        let mut state = self.state()?;
 
         for chunk in chunks {
             state
@@ -57,10 +56,7 @@ impl DocumentStore for InMemoryDocumentStore {
     }
 
     fn get_chunks_by_document(&self, id: DocumentId) -> Result<Vec<Chunk>> {
-        let state = self
-            .inner
-            .lock()
-            .map_err(|_| crate::Error::Storage("in-memory store lock poisoned".to_string()))?;
+        let state = self.state()?;
         Ok(state.chunks_by_doc.get(&id).cloned().unwrap_or_default())
     }
 }
