@@ -162,7 +162,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 id,
                 Inline::Text(restore_escaped_math_brackets(
                     s.into_string(),
-                    &parse_input[(range.start - frontmatter_len)..(range.end - frontmatter_len)],
+                    &parse_input[range.start..range.end],
                 )),
             ),
             Event::Code(s) => push_inline(

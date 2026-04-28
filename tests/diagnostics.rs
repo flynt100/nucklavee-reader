@@ -154,3 +154,27 @@ fn duplicated_trailing_segment_emits_deterministic_diagnostic_ranges() {
     assert_eq!(dropped.kind, DiagnosticKind::Lossy);
     assert_eq!(dropped.byte_range, d1[0].byte_range);
 }
+
+#[test]
+fn escaped_math_brackets_restore_correctly_with_multibyte_frontmatter() {
+    let src = r#"---
+title: "Dash — title"
+---
+
+\[
+E = mc^2
+\]
+"#;
+
+    let doc = parse_markdown(src, opts());
+    let emitted = nucklavee::emitters::markdown::emit_markdown(&doc);
+
+    assert!(
+        emitted.contains("\\["),
+        "expected escaped opening math bracket to be preserved, got {emitted:?}"
+    );
+    assert!(
+        emitted.contains("\\]"),
+        "expected escaped closing math bracket to be preserved, got {emitted:?}"
+    );
+}
