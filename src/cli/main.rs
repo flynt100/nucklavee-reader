@@ -138,12 +138,7 @@ fn run_ingest(
     path: &str,
     normalize_bare_callouts: bool,
 ) -> Result<()> {
-    let id = lib.ingest_with_options(
-        Source::File(path.into()),
-        IngestOptions {
-            normalize_bare_callouts,
-        },
-    )?;
+    let id = ingest_doc_id(lib, path, normalize_bare_callouts)?;
     println!("{id}");
     Ok(())
 }
@@ -154,15 +149,23 @@ fn run_ingest_emit(
     format: Format,
     normalize_bare_callouts: bool,
 ) -> Result<()> {
-    let id = lib.ingest_with_options(
+    let id = ingest_doc_id(lib, path, normalize_bare_callouts)?;
+    let output = lib.emit(id, format)?;
+    println!("{output}");
+    Ok(())
+}
+
+fn ingest_doc_id(
+    lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
+    path: &str,
+    normalize_bare_callouts: bool,
+) -> Result<DocumentId> {
+    lib.ingest_with_options(
         Source::File(path.into()),
         IngestOptions {
             normalize_bare_callouts,
         },
-    )?;
-    let output = lib.emit(id, format)?;
-    println!("{output}");
-    Ok(())
+    )
 }
 
 fn parse_format(raw: &str) -> Result<Format> {
