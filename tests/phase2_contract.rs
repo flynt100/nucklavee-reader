@@ -64,7 +64,7 @@ fn library_query_and_context_window_use_canonical_contract_strings() {
 }
 
 #[test]
-fn library_emit_unsupported_format_uses_canonical_contract_string() {
+fn library_emit_unsupported_formats_match_cli_parse_contract() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
@@ -74,13 +74,17 @@ fn library_emit_unsupported_format_uses_canonical_contract_string() {
         .ingest(Source::RawMarkdown("# title".into()))
         .expect("raw markdown ingest should succeed");
 
-    let err = lib
+    let text_err = lib
         .emit(id, Format::PlainText)
         .expect_err("text emit should fail in phase 2");
-    assert!(matches!(
-        err,
-        Error::NotImplemented(phase2_contract::UNSUPPORTED_FORMAT_TEXT)
-    ));
+    let expected_text_message = phase2_contract::unsupported_format_message("text");
+    assert!(matches!(text_err, Error::InvalidInput(ref msg) if msg == &expected_text_message));
+
+    let html_err = lib
+        .emit(id, Format::Html)
+        .expect_err("html emit should fail in phase 2");
+    let expected_html_message = phase2_contract::unsupported_format_message("html");
+    assert!(matches!(html_err, Error::InvalidInput(ref msg) if msg == &expected_html_message));
 }
 
 #[test]
@@ -120,6 +124,11 @@ fn cli_and_library_share_canonical_boundary_strings() {
     let emit_text_err = lib
         .emit(id, Format::PlainText)
         .expect_err("text emit should fail in phase 2");
+    let expected_text_message = phase2_contract::unsupported_format_message("text");
+    assert!(matches!(
+        emit_text_err,
+        Error::InvalidInput(ref msg) if msg == &expected_text_message
+    ));
 
     let format_output = cli()
         .args([
@@ -132,10 +141,11 @@ fn cli_and_library_share_canonical_boundary_strings() {
         .expect("run ingest-emit unsupported format command");
     let format_stderr = String::from_utf8_lossy(&format_output.stderr);
     assert!(
-        format_stderr.contains(phase2_contract::SUPPORTED_FORMATS)
-            && emit_text_err
-                .to_string()
-                .contains(phase2_contract::SUPPORTED_FORMATS),
-        "cli and library unsupported-format boundaries should agree on supported formats"
+        format_stderr.contains(&expected_text_message),
+        "cli unsupported-format parse boundary should include canonical unsupported-format message: {format_stderr}"
+    );
+    assert!(
+        format_stderr.contains(&emit_text_err.to_string()),
+        "cli and library unsupported-format boundaries should agree on message and error rendering. cli: {format_stderr}; lib: {emit_text_err}"
     );
 }

@@ -11,8 +11,6 @@ pub const HTML_PIPELINE_NOT_IMPLEMENTED: &str =
 pub const PDF_PIPELINE_NOT_IMPLEMENTED: &str =
     "pdf pipeline is not implemented in Phase 2; markdown only";
 pub const EMIT_BY_ID_DISABLED: &str = "emit --id is disabled in Phase 2 because document IDs are process-local. use `ingest-emit <path> --format markdown`";
-pub const UNSUPPORTED_FORMAT_HTML: &str = "unsupported format 'html'. supported: markdown";
-pub const UNSUPPORTED_FORMAT_TEXT: &str = "unsupported format 'text'. supported: markdown";
 
 pub const SUPPORTED_FORMATS: &str = "markdown";
 

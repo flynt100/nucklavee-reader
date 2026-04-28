@@ -123,11 +123,11 @@ where
 
         match format {
             Format::Markdown => Ok(emitters::markdown::emit_markdown(&document)),
-            Format::Html => Err(phase2_contract::not_implemented(
-                phase2_contract::UNSUPPORTED_FORMAT_HTML,
+            Format::Html => Err(phase2_contract::invalid_input(
+                phase2_contract::unsupported_format_message("html"),
             )),
-            Format::PlainText => Err(phase2_contract::not_implemented(
-                phase2_contract::UNSUPPORTED_FORMAT_TEXT,
+            Format::PlainText => Err(phase2_contract::invalid_input(
+                phase2_contract::unsupported_format_message("text"),
             )),
         }
     }
