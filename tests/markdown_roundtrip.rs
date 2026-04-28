@@ -121,6 +121,7 @@ const FIXTURE_EXPANSION_EXPECTED_DIAGNOSTIC: &[&str] = &[
     "09_diagnostics.md",
     "17_common_malformed_variants.md",
     "21_math_inline_underscore_asterisk.md",
+    "20_real_world_obsidian.md",
 ];
 
 #[test]
@@ -265,6 +266,13 @@ fn roundtrip_math_inline_underscore_asterisk_fixture() {
     roundtrip("21_math_inline_underscore_asterisk.md");
 }
 
+
+#[test]
+// Policy E: real-world Obsidian sample with raw HTML must remain expected-diagnostic and structurally deterministic.
+fn roundtrip_real_world_obsidian_fixture_expected_diagnostic() {
+    roundtrip_expected_diagnostic("20_real_world_obsidian.md");
+}
+
 #[test]
 fn title_extraction_uses_first_h1() {
     let (_, source) = load_fixture("06_headings.md");
@@ -376,6 +384,18 @@ fn parse_emit_is_deterministic_for_diagnostics_fixture() {
     assert!(
         !initial.diagnostics.is_empty(),
         "expected diagnostics fixture to produce diagnostics"
+    );
+    assert_deterministic_parse_emit(&label, &source, 5);
+}
+
+#[test]
+// Policy E: deterministic parse->emit behavior for real-world Obsidian sample with intentional unsupported content.
+fn parse_emit_is_deterministic_for_real_world_obsidian_fixture_expected_diagnostic() {
+    let (label, source) = load_fixture("20_real_world_obsidian.md");
+    let initial = parse_markdown(&source, opts());
+    assert!(
+        !initial.diagnostics.is_empty(),
+        "expected real-world Obsidian fixture to produce diagnostics"
     );
     assert_deterministic_parse_emit(&label, &source, 5);
 }
