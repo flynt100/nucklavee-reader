@@ -369,6 +369,54 @@ fn assert_deterministic_parse_emit(label: &str, source: &str, iterations: usize)
     }
 }
 
+fn assert_display_math_blocks_do_not_contain_bad_closer(label: &str, emitted: &str) {
+    let mut in_dollar_math_block = false;
+    let mut in_bracket_math_block = false;
+    let mut current_block = String::new();
+
+    let assert_current_block = |block: &str, context: &str| {
+        assert!(
+            !block.contains("\\ \\]"),
+            "{label}: emitted display math block contains invalid `\\ \\]` sequence ({context}):\n{block}"
+        );
+    };
+
+    for line in emitted.lines() {
+        if in_dollar_math_block {
+            if line.trim() == "$$" {
+                assert_current_block(&current_block, "dollar-delimited");
+                current_block.clear();
+                in_dollar_math_block = false;
+            } else {
+                current_block.push_str(line);
+                current_block.push('\n');
+            }
+            continue;
+        }
+
+        if in_bracket_math_block {
+            if line.trim() == "\\]" {
+                assert_current_block(&current_block, "bracket-delimited");
+                current_block.clear();
+                in_bracket_math_block = false;
+            } else {
+                current_block.push_str(line);
+                current_block.push('\n');
+            }
+            continue;
+        }
+
+        if line.trim() == "$$" {
+            in_dollar_math_block = true;
+            continue;
+        }
+
+        if line.trim() == "\\[" {
+            in_bracket_math_block = true;
+        }
+    }
+}
+
 #[test]
 // Policy E: parse->emit->parse must converge to deterministic output
 fn parse_emit_is_deterministic_for_nested_lists_and_tables_fixture() {
@@ -428,6 +476,17 @@ fn parse_emit_converges_for_styled_leading_list_fixture_after_list_item_root_cau
 fn parse_emit_converges_for_math_underscore_fixture_after_math_root_cause_fix() {
     let (label, source) = load_fixture("21_math_underscore.md");
     assert_resolved_idempotent_roundtrip(&label, &source, 5);
+}
+
+#[test]
+// Policy C regression: emitted display-math blocks must never include invalid `\ \]` closure text.
+fn emitted_display_math_blocks_do_not_use_escaped_space_bracket_closer_for_known_fixtures() {
+    for fixture in ["14_math_delimiters.md", "21_math_underscore.md"] {
+        let (label, source) = load_fixture(fixture);
+        let doc = parse_markdown(&source, opts());
+        let emitted = emit_markdown(&doc);
+        assert_display_math_blocks_do_not_contain_bad_closer(&label, &emitted);
+    }
 }
 
 #[test]
