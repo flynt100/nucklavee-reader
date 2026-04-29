@@ -60,3 +60,12 @@ Persistence semantics are intentionally narrow:
 | `context-window` | Not Implemented | Returns Phase 2 not-implemented error for context window. |
 | `html` | Not Implemented | Returns Phase 2 not-implemented error for html pipeline. |
 | `pdf` | Not Implemented | Returns Phase 2 not-implemented error for pdf pipeline. |
+
+## Verification
+
+Use separate commands so shell newline escapes are not interpreted literally:
+
+```bash
+./target/debug/nucklavee ingest-emit electromagnetic-valence.md --format markdown > /tmp/emv-after.md
+diff -u /tmp/emv-before.md /tmp/emv-after.md
+```
