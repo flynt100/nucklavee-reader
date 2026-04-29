@@ -264,31 +264,20 @@ fn emit_display_math_paragraph(content: &[Inline], out: &mut String) -> bool {
         return false;
     }
 
-    out.push_str("\\[ ");
+    out.push_str("\\[");
     out.push_str(inner);
-    out.push_str(" \\]");
+    out.push_str("\\]");
     true
 }
 
 fn parse_display_math_inner(trimmed: &str) -> Option<&str> {
-    let mut start = trimmed;
-    while let Some(rest) = start.strip_prefix('\\') {
-        start = rest;
-    }
-    start = start.strip_prefix('[')?;
-
-    let mut end = trimmed;
-    while let Some(rest) = end.strip_suffix('\\') {
-        end = rest;
-    }
-    end = end.strip_suffix(']')?;
-
-    let start_idx = trimmed.len() - start.len();
-    let end_idx = end.len();
-    if end_idx < start_idx {
+    let inner = trimmed
+        .strip_prefix("\\[")
+        .and_then(|s| s.strip_suffix("\\]"))?;
+    if inner.is_empty() {
         return None;
     }
-    Some(trimmed[start_idx..end_idx].trim())
+    Some(inner)
 }
 
 fn looks_like_math_inline(s: &str) -> bool {
@@ -522,5 +511,26 @@ mod tests {
             yaml: "a: 1\n".to_string(),
         });
         assert_eq!(emit_markdown(&doc), "---\na: 1\n---\nbody");
+    }
+
+    #[test]
+    fn parse_display_math_inner_preserves_trailing_backslash() {
+        assert_eq!(parse_display_math_inner(r"\[x + y\\]"), Some(r"x + y\"));
+    }
+
+    #[test]
+    fn parse_display_math_inner_preserves_escaped_delimiters_inside_content() {
+        assert_eq!(
+            parse_display_math_inner(r"\[a \\[ b \\] c\\]"),
+            Some(r"a \\[ b \\] c\")
+        );
+    }
+
+    #[test]
+    fn parse_display_math_inner_rejects_malformed_delimiters() {
+        assert_eq!(parse_display_math_inner(r"[x\]"), None);
+        assert_eq!(parse_display_math_inner(r"\[x]"), None);
+        assert_eq!(parse_display_math_inner(r"\\[x\]"), None);
+        assert_eq!(parse_display_math_inner(r"\[x\\]"), Some(r"x\"));
     }
 }
