@@ -33,7 +33,7 @@ Primary goal delivered: post-gate packaging/wiring for the first working ingest/
 2. [x] Implement markdown emitter that preserves semantic structure from IR.
 3. [x] Add IR roundtrip test harness (parse -> emit -> parse -> semantic compare).
 
-## Phase 2B — Remaining Phase-2 Hardening
+## Phase 2B — Completed Phase-2 Hardening
 
 Primary goal: tighten behavior contracts and handoff boundaries around the completed Markdown core loop.
 
@@ -101,8 +101,8 @@ Primary goal: practical PDF ingestion with explicit confidence and graceful fall
 ## Status Snapshot
 
 - **Current truth:** Markdown parser/emitter and IR roundtrip harness are complete.
-- **Phase 2B state:** **not yet complete** until the Phase 2B exit checklist in `docs/phase-gates.md` passes in one revision (`cargo test --test markdown_roundtrip --test cli_smoke_contract`).
-- **Exact next focus:** close the remaining Phase 2B gate checklist items/tests; **Phase 3 starts immediately after this gate is green**.
+- **Phase 2B state:** **complete**. The Phase 2B exit checklist command in `docs/phase-gates.md` is green in the current revision (`cargo test --test markdown_roundtrip --test cli_smoke_contract`).
+- **Exact next focus:** **Phase 3** implementation work (HTML parser/emitter + cross-format integrity), while continuing cross-phase quality gates in parallel.
 - **Immediate next phase after gate closure:** Phase 3 — HTML parser/emitter + cross-format integrity.
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).
 - **Normalization policy reference:** `docs/normalization-deltas.md` (acceptable parse/emit deltas vs semantic regressions).
