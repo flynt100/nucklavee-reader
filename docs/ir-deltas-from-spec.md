@@ -62,6 +62,28 @@ offsets**, even when the parser internally rewrites the input (escaped-newline
 decode, math shielding). The parser maintains offset maps and remaps all
 ranges back before returning the `Document`.
 
+**HTML documents carry `section_path` provenance only** — `byte_range` is
+`None` because html5ever does not expose source offsets. Downstream code must
+treat `byte_range` as optional (it already is in the type).
+
+## HTML parser specifics (Phase 3, spec §4.2)
+
+- Entry point: `parsers::html::parse_html(input, HtmlParseOptions)`; never
+  fails, degrades with diagnostics (same philosophy as markdown).
+- Content extraction: chrome skip-list (`nav`, `header`, `footer`, `aside`,
+  `script`, `style`, forms, embeds) + densest
+  `<main>`/`<article>`/`[role=main]` shortcut + 80% density-descent fallback.
+  `HtmlParseOptions.extract_content = false` maps the whole `<body>`.
+- Tables are shape-normalized to satisfy IR validation: a leading all-`<th>`
+  row or `<thead>` row becomes the header, headerless tables promote their
+  first row (Normalized diagnostic), ragged rows are padded with empty cells
+  (Normalized diagnostic), colspan/rowspan flattening is Lossy.
+- Unclassified elements: transparent flatten when they contain block
+  structure, else `GenericBlock { hint: class names or tag, confidence: 0.5 }`
+  — with per-tag deduplicated `Unsupported` diagnostics.
+- Cross-format comparisons use `ir::structural_diff_bodies` (body-only diff
+  that ignores `meta.format`/`title`/`frontmatter`).
+
 ## Library / ingest (spec §2, §7.4)
 
 - `Library<S, V, E>` is generic over store/index/embedder traits, not concrete

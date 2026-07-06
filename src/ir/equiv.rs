@@ -14,6 +14,18 @@ pub fn structurally_equivalent(a: &Document, b: &Document) -> bool {
     structural_diff(a, b).is_none()
 }
 
+/// Body-only structural diff for cross-format comparisons: ignores metadata
+/// (title, format, frontmatter) entirely and compares normalized block trees.
+/// Use this when the two documents legitimately differ in source format
+/// (e.g. html→IR vs markdown→IR) but should carry the same structure.
+pub fn structural_diff_bodies(a: &Document, b: &Document) -> Option<String> {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    normalize_document(&mut a);
+    normalize_document(&mut b);
+    diff_nodes(&a.body, &b.body, "body")
+}
+
 /// Return `None` if structurally equivalent, or a human-readable description
 /// of the first difference.
 pub fn structural_diff(a: &Document, b: &Document) -> Option<String> {

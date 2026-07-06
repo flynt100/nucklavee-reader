@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Shipping the Reader</title>
+</head>
+<body>
+  <header><nav><a href="/">BLOGNAV Home</a> <a href="/archive">BLOGNAV Archive</a></nav></header>
+  <article>
+    <h1>Shipping the Reader</h1>
+    <p>Last month we <strong>finally shipped</strong> the reader pipeline. The hardest part was not parsing at all: it was deciding what <em>not</em> to parse.</p>
+    <p><img src="https://example.com/pipeline.png" alt="Pipeline diagram"></p>
+    <blockquote>
+      <p>Every parser grows until it contains an ad-hoc, informally-specified implementation of half a browser.</p>
+    </blockquote>
+    <p>Three lessons stood out:</p>
+    <ul>
+      <li>Ship the smallest format first and lock its behavior with golden tests</li>
+      <li>Make every lossy decision visible as a diagnostic</li>
+      <li>Keep provenance in original-source coordinates</li>
+    </ul>
+    <p>The full write-up of the plumbing is in the <a href="https://example.com/design-notes">design notes</a>.</p>
+  </article>
+  <footer class="comments">
+    <h3>COMMENTS 2 responses</h3>
+    <p>COMMENTS Great post, thanks for sharing!</p>
+  </footer>
+</body>
+</html>

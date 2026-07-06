@@ -29,8 +29,9 @@ use chrono::Utc;
 use pulldown_cmark::{
     CodeBlockKind, Event, HeadingLevel, Options, Parser as CmarkParser, Tag, TagEnd,
 };
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
+
+use crate::parsers::{inlines_to_plain, sha256_hex};
 
 use crate::ir::{
     Block, BlockNode, ByteRange, Diagnostic, DiagnosticKind, Document, DocumentId, DocumentMeta,
@@ -1006,34 +1007,6 @@ fn heading_level_to_u8(level: HeadingLevel) -> u8 {
     }
 }
 
-/// Flatten inlines into a plain string (used for heading text in section paths
-/// and document title extraction).
-fn inlines_to_plain(inlines: &[Inline]) -> String {
-    let mut out = String::new();
-    for inline in inlines {
-        push_plain(inline, &mut out);
-    }
-    out
-}
-
-fn push_plain(inline: &Inline, out: &mut String) {
-    match inline {
-        Inline::Text(s) => out.push_str(s),
-        Inline::Code(s) => out.push_str(s),
-        Inline::LineBreak => out.push(' '),
-        Inline::Styled { children, .. } | Inline::Link { children, .. } => {
-            for c in children {
-                push_plain(c, out);
-            }
-        }
-        Inline::Image { alt, .. } => {
-            if let Some(alt) = alt {
-                out.push_str(alt);
-            }
-        }
-    }
-}
-
 fn extract_title(body: &[BlockNode]) -> Option<String> {
     for node in body {
         if let Block::Heading { level: 1, content } = &node.block {
@@ -1041,16 +1014,4 @@ fn extract_title(body: &[BlockNode]) -> Option<String> {
         }
     }
     None
-}
-
-fn sha256_hex(input: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    let digest = hasher.finalize();
-    let mut s = String::with_capacity(digest.len() * 2);
-    for b in digest {
-        use std::fmt::Write;
-        let _ = write!(s, "{:02x}", b);
-    }
-    s
 }

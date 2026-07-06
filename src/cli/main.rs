@@ -29,8 +29,8 @@ fn main() -> ExitCode {
 #[derive(Debug, Parser)]
 #[command(name = "nucklavee")]
 #[command(
-    about = "nucklavee Phase-2 CLI (ingest-emit retrieval only)",
-    long_about = "Phase 2 supports retrieval through `ingest-emit` only. The CLI uses an in-memory document store, and document IDs are process-local and valid only in the process that created them. Standalone `emit --id` is disabled in Phase 2."
+    about = "nucklavee CLI (markdown/html ingest, markdown emit)",
+    long_about = "Ingest markdown (.md) or html (.html/.htm) files and emit canonical markdown via `ingest-emit`. The CLI uses an in-memory document store, and document IDs are process-local and valid only in the process that created them. Standalone `emit --id` is disabled."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -40,17 +40,17 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     #[command(
-        about = "Ingest a markdown file and print its in-memory document ID (same process only)"
+        about = "Ingest a markdown or html file and print its in-memory document ID (same process only)"
     )]
     Ingest {
-        #[arg(help = "Path to a local .md file")]
+        #[arg(help = "Path to a local .md or .html file")]
         path: String,
         #[arg(long, help = "Normalize bare callouts like `[!tip]` into blockquotes")]
         normalize_bare_callouts: bool,
     },
     #[command(
         hide = true,
-        about = "Legacy Phase-2 command: emit by in-memory document ID (disabled)"
+        about = "Legacy command: emit by in-memory document ID (disabled)"
     )]
     Emit {
         #[arg(long)]
@@ -58,9 +58,9 @@ enum Commands {
         #[arg(long, value_parser = parse_format)]
         format: Format,
     },
-    #[command(about = "Ingest and immediately emit in one process (recommended for Phase 2)")]
+    #[command(about = "Ingest and immediately emit in one process (recommended)")]
     IngestEmit {
-        #[arg(help = "Path to a local .md file")]
+        #[arg(help = "Path to a local .md or .html file")]
         path: String,
         #[arg(long, value_parser = parse_format, default_value = "markdown")]
         format: Format,

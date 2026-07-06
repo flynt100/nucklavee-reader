@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Configuring the Widget Engine</title>
+  <meta property="og:title" content="Configuring the Widget Engine — Docs">
+  <style>body { font-family: sans-serif; } .sidebar { width: 200px; }</style>
+  <script>window.analytics = { track: function () { return "TRACKING-BEACON"; } };</script>
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="logo">WidgetCo</a>
+    <nav class="top-nav">
+      <ul>
+        <li><a href="/docs">NAVLINK Documentation</a></li>
+        <li><a href="/api">NAVLINK API</a></li>
+        <li><a href="/pricing">NAVLINK Pricing</a></li>
+      </ul>
+    </nav>
+  </header>
+  <aside class="sidebar">
+    <h3>SIDEBAR On this page</h3>
+    <ul>
+      <li><a href="#install">SIDEBAR Installation</a></li>
+      <li><a href="#config">SIDEBAR Configuration</a></li>
+    </ul>
+  </aside>
+  <main>
+    <h1>Configuring the Widget Engine</h1>
+    <p>The widget engine reads its settings from a single file named <code>widget.toml</code> at the project root. Most projects only need to set two or three keys.</p>
+    <h2>Installation</h2>
+    <p>Install the engine with your package manager, then verify the binary is on your <code>PATH</code>. See the <a href="https://example.com/releases">release notes</a> for platform specifics.</p>
+    <pre><code class="language-bash">widgetctl install --channel stable
+widgetctl verify</code></pre>
+    <h2>Configuration</h2>
+    <p>Settings are grouped by section. The <strong>core</strong> section is required; everything else is optional.</p>
+    <table>
+      <thead>
+        <tr><th>Key</th><th>Type</th><th>Default</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>core.mode</code></td><td>string</td><td><code>auto</code></td></tr>
+        <tr><td><code>core.threads</code></td><td>integer</td><td><code>4</code></td></tr>
+        <tr><td><code>log.level</code></td><td>string</td><td><code>info</code></td></tr>
+      </tbody>
+    </table>
+    <h3>Advanced options</h3>
+    <p>Advanced options should be changed with care:</p>
+    <ul>
+      <li>Pin the engine version in CI
+        <ul>
+          <li>Use the <code>--locked</code> flag</li>
+          <li>Commit the lockfile</li>
+        </ul>
+      </li>
+      <li>Enable <em>verbose</em> logging only while debugging</li>
+    </ul>
+    <blockquote>
+      <p>Changing <code>core.mode</code> at runtime requires a full restart of the engine.</p>
+    </blockquote>
+    <hr>
+    <p>Questions? File an issue on the <a href="https://example.com/tracker">tracker</a>.</p>
+  </main>
+  <footer class="site-footer">
+    <p>FOOTER Copyright 2026 WidgetCo. All rights reserved.</p>
+  </footer>
+</body>
+</html>

@@ -1,7 +1,8 @@
-//! Phase 2B CLI smoke-contract tests.
+//! CLI smoke-contract tests.
 //!
 //! These tests lock boundary behavior for argument parsing and expected
-//! user-facing error strings documented in docs/cli-phase2-boundary.md.
+//! user-facing error strings documented in docs/cli-phase2-boundary.md
+//! (Phase-2 boundary, extended by the Phase-3 HTML ingest path).
 
 use std::process::Command;
 
@@ -37,6 +38,50 @@ fn ingest_emit_rejects_unsupported_format_with_expected_parse_error() {
     assert!(
         stderr.contains(&phase2_contract::unsupported_format_message("html")),
         "missing domain-specific invalid-format reason: {stderr}"
+    );
+}
+
+#[test]
+fn ingest_emit_accepts_html_files_and_emits_markdown() {
+    let output = cli()
+        .args([
+            "ingest-emit",
+            "tests/fixtures/html/blog_post.html",
+            "--format",
+            "markdown",
+        ])
+        .output()
+        .expect("failed to run nucklavee binary");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "html ingest-emit should succeed in Phase 3: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("# Shipping the Reader"),
+        "expected markdown emission of html content: {stdout}"
+    );
+    assert!(
+        !stdout.contains("BLOGNAV"),
+        "chrome must be stripped from CLI output: {stdout}"
+    );
+}
+
+#[test]
+fn ingest_rejects_unsupported_file_extension_with_contract_message() {
+    let output = cli()
+        .args(["ingest-emit", "notes.docx", "--format", "markdown"])
+        .output()
+        .expect("failed to run nucklavee binary");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&phase2_contract::unsupported_extension_message("docx")),
+        "unexpected unsupported-extension boundary message: {stderr}"
     );
 }
 

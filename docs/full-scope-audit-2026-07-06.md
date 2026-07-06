@@ -12,7 +12,17 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > additional pre-existing bug not listed below: math shielding replaced
 > `\[ \]` spans inside inline code with the literal placeholder character in
 > both IR and emitted output (symmetric corruption, invisible to roundtrip
-> tests). Tasks 2+ remain open and unblocked.
+> tests).
+>
+> **Task 2 (HTML parser) is also complete** (same day): `scraper`-based
+> content extraction + DOM→IR mapping in `src/parsers/html.rs`, wired into
+> `Library::ingest` for `Source::RawHtml` and `.html`/`.htm` files, with
+> html→IR→markdown→IR equivalence gates over three realistic fixture pages
+> (`tests/html_ingest.rs`, 17 tests) and updated boundary contracts. A known
+> limitation is documented for Task 3/4 pickup: math-like `$…$` syntax inside
+> link URLs is still shielded by the markdown parser pre-cmark (pre-existing,
+> symmetric). Tasks 3+ remain open and unblocked; Tasks 5/6/8 stay
+> parallelizable.
 
 ---
 

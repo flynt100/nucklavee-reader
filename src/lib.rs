@@ -16,7 +16,8 @@ pub use chunking::Chunk;
 pub use ir::{
     Block, BlockNode, ByteRange, Diagnostic, DiagnosticKind, Document, DocumentId, DocumentMeta,
     Frontmatter, Inline, ListItem, Provenance, Source, SourceFormat, SourceInfo, Style,
-    ValidationError, normalize_document, structural_diff, structurally_equivalent, validate,
+    ValidationError, normalize_document, structural_diff, structural_diff_bodies,
+    structurally_equivalent, validate,
 };
 
 /// Primary API entrypoint for document ingestion and retrieval.
@@ -59,49 +60,81 @@ where
         source: Source,
         options: IngestOptions,
     ) -> Result<DocumentId> {
-        let (markdown, source_descriptor) = match source {
+        enum IngestInput {
+            Markdown(String),
+            Html(String),
+        }
+
+        let (input, source_descriptor) = match source {
             Source::File(path) => {
                 let ext = path
                     .extension()
                     .and_then(|ext| ext.to_str())
-                    .unwrap_or_default();
-                if !ext.eq_ignore_ascii_case("md") {
-                    return Err(Error::NotImplemented(
-                        "ingest currently supports markdown files only (.md). html/pdf ingest is not implemented in Phase 2",
-                    ));
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
+                let read = |label: &str| {
+                    std::fs::read_to_string(&path).map_err(|err| {
+                        Error::InvalidInput(format!(
+                            "failed reading {label} file '{}': {err}",
+                            path.display()
+                        ))
+                    })
+                };
+                match ext.as_str() {
+                    "md" => (
+                        IngestInput::Markdown(read("markdown")?),
+                        path.display().to_string(),
+                    ),
+                    "html" | "htm" => (
+                        IngestInput::Html(read("html")?),
+                        path.display().to_string(),
+                    ),
+                    "pdf" => {
+                        return Err(phase2_contract::not_implemented(
+                            phase2_contract::PDF_PIPELINE_NOT_IMPLEMENTED,
+                        ));
+                    }
+                    other => {
+                        return Err(Error::InvalidInput(
+                            phase2_contract::unsupported_extension_message(other),
+                        ));
+                    }
                 }
-
-                let markdown = std::fs::read_to_string(&path).map_err(|err| {
-                    Error::InvalidInput(format!(
-                        "failed reading markdown file '{}': {err}",
-                        path.display()
-                    ))
-                })?;
-                (markdown, path.display().to_string())
             }
-            Source::RawMarkdown(markdown) => (markdown, "raw:markdown".to_string()),
+            Source::RawMarkdown(markdown) => (IngestInput::Markdown(markdown), "raw:markdown".to_string()),
+            Source::RawHtml(html) => (IngestInput::Html(html), "raw:html".to_string()),
             Source::Url(_) => {
                 return Err(Error::NotImplemented(
-                    "URL ingest is not implemented in Phase 2; provide a local .md file",
-                ));
-            }
-            Source::RawHtml(_) => {
-                return Err(Error::NotImplemented(
-                    "html ingest is not implemented in Phase 2; markdown only",
+                    "URL ingest is not implemented yet (Phase 3, Task 4); provide a local .md or .html file",
                 ));
             }
         };
 
-        let doc = parsers::markdown::parse_markdown(
-            &markdown,
-            parsers::markdown::ParseOptions {
-                source_descriptor: Some(source_descriptor),
-                normalize_repeated_leading_segment: false,
-                normalize_bare_callouts: options.normalize_bare_callouts,
-            },
-        );
+        let (doc, source_len) = match input {
+            IngestInput::Markdown(markdown) => {
+                let doc = parsers::markdown::parse_markdown(
+                    &markdown,
+                    parsers::markdown::ParseOptions {
+                        source_descriptor: Some(source_descriptor),
+                        normalize_repeated_leading_segment: false,
+                        normalize_bare_callouts: options.normalize_bare_callouts,
+                    },
+                );
+                (doc, markdown.len())
+            }
+            IngestInput::Html(html) => {
+                let doc = parsers::html::parse_html(
+                    &html,
+                    parsers::html::HtmlParseOptions {
+                        source_descriptor: Some(source_descriptor),
+                        ..Default::default()
+                    },
+                );
+                (doc, html.len())
+            }
+        };
 
-        validate(&doc, Some(markdown.len()))
+        validate(&doc, Some(source_len))
             .map_err(|err| Error::InvalidInput(format!("validation failed: {err}")))?;
 
         // Content-hash deduplication (spec §7.4): re-ingesting identical raw
