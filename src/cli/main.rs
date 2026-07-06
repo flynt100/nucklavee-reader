@@ -1,39 +1,11 @@
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use nucklavee::chunking::ChunkId;
-use nucklavee::embedder::Embedder;
 use nucklavee::ir::{DocumentId, Source};
 use nucklavee::phase2_contract;
 use nucklavee::storage::memory::InMemoryDocumentStore;
-use nucklavee::vector::VectorIndex;
+use nucklavee::test_support::{NoopEmbedder, NoopVectorIndex};
 use nucklavee::{Format, IngestOptions, Library, Result};
-
-#[derive(Debug, Default)]
-struct NoopVectorIndex;
-
-impl VectorIndex for NoopVectorIndex {
-    fn add(&mut self, _id: ChunkId, _vector: Vec<f32>) -> Result<()> {
-        Ok(())
-    }
-
-    fn search(&self, _query: &[f32], _limit: usize) -> Result<Vec<(ChunkId, f32)>> {
-        Ok(Vec::new())
-    }
-}
-
-#[derive(Debug, Default)]
-struct NoopEmbedder;
-
-impl Embedder for NoopEmbedder {
-    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        Ok(vec![vec![0.0; self.dimension()]; texts.len()])
-    }
-
-    fn dimension(&self) -> usize {
-        8
-    }
-}
 
 fn main() -> ExitCode {
     let mut lib = Library::new(

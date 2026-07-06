@@ -4,6 +4,16 @@ _Date: 2026-07-06_
 _Branch: `claude/nucklavee-reader-audit-v04mgz`_
 _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 
+> **Execution status:** Task 0 (all of 0a–0f) and Task 1 (1a trait freeze,
+> 1b dedupe, 1c provenance remap + sentinel guard) were executed on this
+> branch on 2026-07-06. Findings W1–W3, W5–W6, and the 0a/0f items of W7 are
+> resolved; the spec-vs-implementation record now lives in
+> `docs/ir-deltas-from-spec.md`. Executing 1c exposed and fixed an
+> additional pre-existing bug not listed below: math shielding replaced
+> `\[ \]` spans inside inline code with the literal placeholder character in
+> both IR and emitted output (symmetric corruption, invisible to roundtrip
+> tests). Tasks 2+ remain open and unblocked.
+
 ---
 
 ## Part 1 — Current-State Audit

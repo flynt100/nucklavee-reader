@@ -100,6 +100,10 @@ Primary goal: practical PDF ingestion with explicit confidence and graceful fall
 
 ## Status Snapshot
 
+This section is the single status source for the roadmap. (`NEXT_BUILD_PUSH.md`
+was retired in the 2026-07-06 cleanup; per-push task specs now live in
+`docs/full-scope-audit-2026-07-06.md`.)
+
 - **Current truth:** Markdown parser/emitter and IR roundtrip harness are complete.
 - **Phase 2B state:** **complete**. The Phase 2B exit checklist command in `docs/phase-gates.md` is green in the current revision (`cargo test --test markdown_roundtrip --test cli_smoke_contract`).
 - **Exact next focus:** **Phase 3** implementation work (HTML parser/emitter + cross-format integrity), while continuing cross-phase quality gates in parallel.

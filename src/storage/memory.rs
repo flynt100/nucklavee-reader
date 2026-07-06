@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::Result;
-use crate::chunking::Chunk;
-use crate::ir::{Document, DocumentId};
+use crate::chunking::{Chunk, ChunkId};
+use crate::ir::{Document, DocumentId, DocumentMeta};
 use crate::storage::DocumentStore;
 
 #[derive(Debug, Clone, Default)]
@@ -41,6 +41,27 @@ impl DocumentStore for InMemoryDocumentStore {
             .ok_or_else(|| crate::Error::Storage(format!("document not found: {id}")))
     }
 
+    fn find_by_content_hash(&self, content_hash: &str) -> Result<Option<DocumentId>> {
+        let state = self.state()?;
+        Ok(state
+            .documents
+            .values()
+            .find(|doc| doc.meta.content_hash == content_hash)
+            .map(|doc| doc.meta.id))
+    }
+
+    fn list_documents(&self) -> Result<Vec<DocumentMeta>> {
+        let state = self.state()?;
+        Ok(state.documents.values().map(|doc| doc.meta.clone()).collect())
+    }
+
+    fn remove_document(&self, id: DocumentId) -> Result<()> {
+        let mut state = self.state()?;
+        state.documents.remove(&id);
+        state.chunks_by_doc.remove(&id);
+        Ok(())
+    }
+
     fn insert_chunks(&self, chunks: &[Chunk]) -> Result<()> {
         let mut state = self.state()?;
 
@@ -58,5 +79,19 @@ impl DocumentStore for InMemoryDocumentStore {
     fn get_chunks_by_document(&self, id: DocumentId) -> Result<Vec<Chunk>> {
         let state = self.state()?;
         Ok(state.chunks_by_doc.get(&id).cloned().unwrap_or_default())
+    }
+
+    fn get_chunks_by_ids(&self, ids: &[ChunkId]) -> Result<Vec<Chunk>> {
+        let state = self.state()?;
+        let by_id: HashMap<ChunkId, &Chunk> = state
+            .chunks_by_doc
+            .values()
+            .flatten()
+            .map(|chunk| (chunk.id, chunk))
+            .collect();
+        Ok(ids
+            .iter()
+            .filter_map(|id| by_id.get(id).map(|chunk| (*chunk).clone()))
+            .collect())
     }
 }
