@@ -922,13 +922,12 @@ fn end_tag(
                 ProvSectionPathBranch::Current,
             );
             let source_slice = &source[start..end_range.end];
-            if normalize_bare_callouts && !in_blockquote(stack) {
-                if let Some(blockquote) =
-                    normalize_bare_callout_paragraph(source_slice, prov.clone())
-                {
-                    append_block(stack, top_body, blockquote);
-                    return;
-                }
+            if normalize_bare_callouts
+                && !in_blockquote(stack)
+                && let Some(blockquote) = normalize_bare_callout_paragraph(source_slice, prov.clone())
+            {
+                append_block(stack, top_body, blockquote);
+                return;
             }
             match detect_phase2b_tabular_fallback(source_slice) {
                 Some(Phase2bParagraphBlock::Table { headers, rows }) => {
@@ -1398,9 +1397,7 @@ fn normalize_bare_callout_paragraph(source_slice: &str, prov: Provenance) -> Opt
     if !first.starts_with("[!") {
         return None;
     }
-    let Some(end_bracket) = first.find(']') else {
-        return None;
-    };
+    let end_bracket = first.find(']')?;
     if end_bracket < 3 {
         return None;
     }

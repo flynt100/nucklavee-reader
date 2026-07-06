@@ -1,38 +1,10 @@
 use std::process::Command;
 
-use nucklavee::chunking::ChunkId;
-use nucklavee::embedder::Embedder;
 use nucklavee::ir::Source;
 use nucklavee::phase2_contract;
 use nucklavee::storage::memory::InMemoryDocumentStore;
-use nucklavee::vector::VectorIndex;
-use nucklavee::{Error, Format, Library, Result};
-
-#[derive(Debug, Default)]
-struct NoopVectorIndex;
-
-impl VectorIndex for NoopVectorIndex {
-    fn add(&mut self, _id: ChunkId, _vector: Vec<f32>) -> Result<()> {
-        Ok(())
-    }
-
-    fn search(&self, _query: &[f32], _limit: usize) -> Result<Vec<(ChunkId, f32)>> {
-        Ok(Vec::new())
-    }
-}
-
-#[derive(Debug, Default)]
-struct NoopEmbedder;
-
-impl Embedder for NoopEmbedder {
-    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        Ok(vec![vec![0.0; self.dimension()]; texts.len()])
-    }
-
-    fn dimension(&self) -> usize {
-        8
-    }
-}
+use nucklavee::test_support::{NoopEmbedder, NoopVectorIndex};
+use nucklavee::{Error, Format, Library};
 
 fn cli() -> Command {
     Command::new(env!("CARGO_BIN_EXE_nucklavee"))

@@ -9,6 +9,7 @@ pub mod parsers;
 pub mod phase2_contract;
 pub mod pipeline;
 pub mod storage;
+pub mod test_support;
 pub mod vector;
 
 pub use chunking::Chunk;

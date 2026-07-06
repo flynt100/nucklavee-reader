@@ -369,58 +369,57 @@ fn escape_text(s: &str) -> String {
         let rest = &s[i..];
 
         // Preserve Obsidian-style wikilinks as-is.
-        if let Some(tail) = rest.strip_prefix("[[") {
-            if let Some(close) = tail.find("]]") {
-                let end = i + 2 + close + 2;
-                out.push_str(&s[i..end]);
-                i = end;
-                continue;
-            }
+        if let Some(tail) = rest.strip_prefix("[[")
+            && let Some(close) = tail.find("]]")
+        {
+            let end = i + 2 + close + 2;
+            out.push_str(&s[i..end]);
+            i = end;
+            continue;
         }
 
         // Preserve callout labels like `[!abstract]` as-is.
-        if let Some(tail) = rest.strip_prefix("[!") {
-            if let Some(close) = tail.find(']') {
-                let end = i + 2 + close + 1;
-                out.push_str(&s[i..end]);
-                i = end;
-                continue;
-            }
+        if let Some(tail) = rest.strip_prefix("[!")
+            && let Some(close) = tail.find(']')
+        {
+            let end = i + 2 + close + 1;
+            out.push_str(&s[i..end]);
+            i = end;
+            continue;
         }
 
         // Preserve inline-math-like `$...$` spans as-is.
-        if let Some(tail) = rest.strip_prefix('$') {
-            if let Some(close) = tail.find('$') {
-                let end = i + 1 + close + 1;
-                out.push_str(&s[i..end]);
-                i = end;
-                continue;
-            }
+        if let Some(tail) = rest.strip_prefix('$')
+            && let Some(close) = tail.find('$')
+        {
+            let end = i + 1 + close + 1;
+            out.push_str(&s[i..end]);
+            i = end;
+            continue;
         }
 
         // Preserve display-math-like `\\[ ... \\]` spans as-is.
-        if let Some(tail) = rest.strip_prefix("\\[") {
-            if let Some(close) = tail.find("\\]") {
-                let end = i + 2 + close + 2;
-                out.push_str(&s[i..end]);
-                i = end;
-                continue;
-            }
+        if let Some(tail) = rest.strip_prefix("\\[")
+            && let Some(close) = tail.find("\\]")
+        {
+            let end = i + 2 + close + 2;
+            out.push_str(&s[i..end]);
+            i = end;
+            continue;
         }
 
         // Promote math-like bracket spans to escaped display delimiters so
         // parse->emit preserves `\\[ ... \\]` intent.
-        if let Some(tail) = rest.strip_prefix('[') {
-            if let Some(close) = tail.find(']') {
-                let inner = &tail[..close];
-                let looks_mathy = looks_like_math_inline(inner);
-                if looks_mathy {
-                    out.push_str("\\[");
-                    out.push_str(inner);
-                    out.push_str("\\]");
-                    i += 1 + close + 1;
-                    continue;
-                }
+        if let Some(tail) = rest.strip_prefix('[')
+            && let Some(close) = tail.find(']')
+        {
+            let inner = &tail[..close];
+            if looks_like_math_inline(inner) {
+                out.push_str("\\[");
+                out.push_str(inner);
+                out.push_str("\\]");
+                i += 1 + close + 1;
+                continue;
             }
         }
 
