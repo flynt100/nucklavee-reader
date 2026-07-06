@@ -1,24 +1,10 @@
-use crate::Result;
-use crate::ir::Document;
-
-pub trait Parser {
-    fn parse(&self, input: &str) -> Result<Document>;
-}
-
-/// Defines a unit-struct parser whose `parse` returns `Error::NotImplemented`.
-macro_rules! parser_stub {
-    ($name:ident, $label:expr) => {
-        #[derive(Debug, Default)]
-        pub struct $name;
-
-        impl $crate::parsers::Parser for $name {
-            fn parse(&self, _input: &str) -> $crate::Result<$crate::ir::Document> {
-                Err($crate::Error::NotImplemented(concat!($label, " parser")))
-            }
-        }
-    };
-}
-pub(crate) use parser_stub;
+//! Format parsers.
+//!
+//! There is deliberately **no cross-format `Parser` trait** (frozen
+//! 2026-07-06; see `docs/ir-deltas-from-spec.md`): parse options are
+//! format-specific, so each format exposes free functions and/or a struct
+//! with inherent methods. Re-introduce a trait only when a real cross-format
+//! abstraction is needed.
 
 pub mod html;
 pub mod markdown;

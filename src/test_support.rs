@@ -4,6 +4,8 @@
 //! yet (vector index, embedder). They are **not part of the stable API** and
 //! will be removed or demoted once real backends exist.
 
+use std::path::Path;
+
 use crate::Result;
 use crate::chunking::ChunkId;
 use crate::embedder::Embedder;
@@ -18,8 +20,20 @@ impl VectorIndex for NoopVectorIndex {
         Ok(())
     }
 
+    fn remove(&mut self, _id: ChunkId) -> Result<()> {
+        Ok(())
+    }
+
     fn search(&self, _query: &[f32], _limit: usize) -> Result<Vec<(ChunkId, f32)>> {
         Ok(Vec::new())
+    }
+
+    fn save(&self, _path: &Path) -> Result<()> {
+        Ok(())
+    }
+
+    fn load(&mut self, _path: &Path) -> Result<()> {
+        Ok(())
     }
 }
 

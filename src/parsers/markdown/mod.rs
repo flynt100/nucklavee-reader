@@ -31,12 +31,10 @@ use pulldown_cmark::{
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::Result;
 use crate::ir::{
     Block, BlockNode, ByteRange, Diagnostic, DiagnosticKind, Document, DocumentId, DocumentMeta,
     Inline, ListItem, Provenance, SourceFormat, SourceInfo, Style,
 };
-use crate::parsers::Parser;
 
 use heuristics::{Phase2bParagraphBlock, detect_phase2b_tabular_fallback};
 use math::{
@@ -51,9 +49,10 @@ use preparse::{
 #[derive(Debug, Default, Clone)]
 pub struct MarkdownParser;
 
-impl Parser for MarkdownParser {
-    fn parse(&self, input: &str) -> Result<Document> {
-        Ok(parse_markdown(input, ParseOptions::default()))
+impl MarkdownParser {
+    /// Convenience wrapper over [`parse_markdown`] with default options.
+    pub fn parse(&self, input: &str) -> Document {
+        parse_markdown(input, ParseOptions::default())
     }
 }
 
