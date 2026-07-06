@@ -12,6 +12,16 @@ use crate::ir::{ByteRange, Diagnostic, DiagnosticKind};
 
 pub(super) const MATH_PLACEHOLDER: char = '\u{00A4}';
 
+/// Shared heuristic: does a flattened text span look like math content?
+///
+/// Used by the markdown emitter to decide whether bracketed spans should be
+/// (re-)wrapped in `\[ ... \]` display delimiters. Requires a *strong* math
+/// signal; a bare `_` is deliberately not sufficient because prose like
+/// `[see chapter_3]` must stay literal text.
+pub(crate) fn looks_like_math_inline(s: &str) -> bool {
+    s.contains('\\') || s.contains('=') || s.contains('^') || s.contains('{') || s.contains('}')
+}
+
 #[derive(Debug, Default)]
 pub(super) struct ShieldedMathInput {
     pub(super) shielded_input: String,

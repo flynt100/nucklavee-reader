@@ -115,6 +115,7 @@ const FIXTURE_EXPANSION_EXPECTED_STABLE: &[&str] = &[
     "16_escape_boundaries.md",
     "15_nested_mixed_structures.md",
     "20_styled_leading_list_items.md",
+    "23_plain_bracket_not_math.md",
 ];
 
 const FIXTURE_EXPANSION_EXPECTED_DIAGNOSTIC: &[&str] = &[
@@ -494,6 +495,26 @@ fn emitted_display_math_blocks_do_not_use_escaped_space_bracket_closer_for_known
 fn parse_emit_converges_for_real_world_fixture_after_root_cause_fixes() {
     let (label, source) = load_fixture("22_real_world_mixed.md");
     assert_resolved_idempotent_roundtrip(&label, &source, 5);
+}
+
+#[test]
+// Policy C regression: prose brackets whose contents only contain underscores
+// must not be promoted to display-math delimiters during emission.
+fn plain_underscore_brackets_are_not_promoted_to_display_math() {
+    let (_, source) = load_fixture("23_plain_bracket_not_math.md");
+    let doc = parse_markdown(&source, opts());
+    let emitted = emit_markdown(&doc);
+
+    assert!(
+        !emitted.contains("\\["),
+        "expected no display-math promotion for prose brackets: {emitted}"
+    );
+    assert!(
+        emitted.contains("[see chapter\\_3]") || emitted.contains("[see chapter_3]"),
+        "expected literal bracketed cross-reference to survive emission: {emitted}"
+    );
+
+    roundtrip("23_plain_bracket_not_math.md");
 }
 
 #[test]

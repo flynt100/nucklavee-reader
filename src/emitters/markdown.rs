@@ -15,6 +15,7 @@
 use crate::Result;
 use crate::emitters::Emitter;
 use crate::ir::{Block, BlockNode, Document, Inline, Style};
+use crate::parsers::markdown::math::looks_like_math_inline;
 
 #[derive(Debug, Default, Clone)]
 pub struct MarkdownEmitter;
@@ -278,15 +279,6 @@ fn parse_display_math_inner(trimmed: &str) -> Option<&str> {
         return None;
     }
     Some(inner)
-}
-
-fn looks_like_math_inline(s: &str) -> bool {
-    s.contains('\\')
-        || s.contains('=')
-        || s.contains('^')
-        || s.contains('_')
-        || s.contains('{')
-        || s.contains('}')
 }
 
 fn emit_inline(inline: &Inline, out: &mut String) {
