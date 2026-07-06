@@ -10,6 +10,8 @@ use std::ops::Range;
 
 use crate::ir::{ByteRange, Diagnostic, DiagnosticKind};
 
+use super::offsets::OffsetMap;
+
 pub(super) const MATH_PLACEHOLDER: char = '\u{00A4}';
 
 /// Shared heuristic: does a flattened text span look like math content?
@@ -26,7 +28,16 @@ pub(crate) fn looks_like_math_inline(s: &str) -> bool {
 pub(super) struct ShieldedMathInput {
     pub(super) shielded_input: String,
     pub(super) payloads: Vec<String>,
+    /// Diagnostics with byte ranges in *shielded* (post-transform, offset by
+    /// `range_offset`) coordinates, like every diagnostic produced after this
+    /// stage. The parser remaps them to original coordinates at the end.
     pub(super) diagnostics: Vec<Diagnostic>,
+    /// Maps shielded positions (offset by `range_offset`) back to the
+    /// pre-shielding input's positions (same offset).
+    pub(super) offset_map: OffsetMap,
+    /// True when shielding was skipped because the input already contains the
+    /// placeholder sentinel character.
+    pub(super) disabled: bool,
 }
 
 #[derive(Debug)]
@@ -43,20 +54,46 @@ impl MathRestoreState {
 }
 
 pub(super) fn shield_math_segments(input: &str, range_offset: usize) -> ShieldedMathInput {
+    // Guard: a literal placeholder character in the source would desync the
+    // payload restore queue (each placeholder pops the next payload). Skip
+    // shielding entirely for such documents and say so.
+    if input.contains(MATH_PLACEHOLDER) {
+        return ShieldedMathInput {
+            shielded_input: input.to_string(),
+            payloads: Vec::new(),
+            diagnostics: vec![Diagnostic::new(
+                DiagnosticKind::Unsupported,
+                "input contains the reserved math-shielding sentinel U+00A4; math shielding disabled for this document",
+            )],
+            offset_map: OffsetMap::default(),
+            disabled: true,
+        };
+    }
+
     let mut out = String::with_capacity(input.len());
     let mut payloads = Vec::new();
     let mut diagnostics = Vec::new();
+    let mut offset_map = OffsetMap::default();
     let mut i = 0usize;
 
     while i < input.len() {
         if let Some((end, payload, diagnostic)) = try_match_math_span(input, i) {
             if let Some(message) = diagnostic {
+                // Text is copied unchanged; record the diagnostic in shielded
+                // coordinates (where it currently sits in `out`).
+                let diag_start = range_offset + out.len();
+                out.push_str(&input[i..end]);
+                let diag_end = range_offset + out.len();
                 diagnostics.push(
                     Diagnostic::new(DiagnosticKind::Normalized, message)
-                        .with_range(ByteRange::new(range_offset + i, range_offset + end)),
+                        .with_range(ByteRange::new(diag_start, diag_end)),
                 );
-                out.push_str(&input[i..end]);
             } else {
+                offset_map.push_edit(
+                    range_offset + out.len(),
+                    MATH_PLACEHOLDER.len_utf8(),
+                    end - i,
+                );
                 payloads.push(payload);
                 out.push(MATH_PLACEHOLDER);
             }
@@ -76,6 +113,8 @@ pub(super) fn shield_math_segments(input: &str, range_offset: usize) -> Shielded
         shielded_input: out,
         payloads,
         diagnostics,
+        offset_map,
+        disabled: false,
     }
 }
 

@@ -8,15 +8,20 @@
 
 use crate::ir::{Diagnostic, DiagnosticKind, Frontmatter};
 
+use super::offsets::OffsetMap;
+
 pub(super) struct NormalizedInput {
     pub(super) input: String,
     pub(super) diagnostics: Vec<Diagnostic>,
+    /// Maps positions in `input` (decoded) back to the caller's original
+    /// string. Identity when no decoding happened.
+    pub(super) offset_map: OffsetMap,
 }
 
 pub(super) fn normalize_preparse_input(input: &str) -> NormalizedInput {
     let mut diagnostics = Vec::new();
     if appears_single_line_escaped_markdown(input) {
-        let decoded = decode_escaped_newlines(input);
+        let (decoded, offset_map) = decode_escaped_newlines(input);
         if decoded != input {
             diagnostics.push(Diagnostic::new(
                 DiagnosticKind::Normalized,
@@ -25,6 +30,7 @@ pub(super) fn normalize_preparse_input(input: &str) -> NormalizedInput {
             return NormalizedInput {
                 input: decoded,
                 diagnostics,
+                offset_map,
             };
         }
     }
@@ -32,6 +38,7 @@ pub(super) fn normalize_preparse_input(input: &str) -> NormalizedInput {
     NormalizedInput {
         input: input.to_string(),
         diagnostics,
+        offset_map: OffsetMap::default(),
     }
 }
 
@@ -40,8 +47,29 @@ fn appears_single_line_escaped_markdown(input: &str) -> bool {
     !trimmed.contains('\n') && trimmed.contains("\\n")
 }
 
-fn decode_escaped_newlines(input: &str) -> String {
-    input.replace("\\r\\n", "\n").replace("\\n", "\n")
+/// Decode `\r\n` / `\n` escape sequences into real newlines, recording each
+/// replacement so decoded positions can be mapped back to the original.
+fn decode_escaped_newlines(input: &str) -> (String, OffsetMap) {
+    let mut out = String::with_capacity(input.len());
+    let mut map = OffsetMap::default();
+    let mut i = 0usize;
+    while i < input.len() {
+        let rest = &input[i..];
+        if rest.starts_with("\\r\\n") {
+            map.push_edit(out.len(), 1, 4);
+            out.push('\n');
+            i += 4;
+        } else if rest.starts_with("\\n") {
+            map.push_edit(out.len(), 1, 2);
+            out.push('\n');
+            i += 2;
+        } else {
+            let ch = rest.chars().next().expect("non-empty remainder");
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    (out, map)
 }
 
 pub(super) fn extract_frontmatter(input: &str) -> (Option<Frontmatter>, usize) {

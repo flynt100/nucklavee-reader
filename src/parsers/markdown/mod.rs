@@ -20,6 +20,7 @@
 
 mod heuristics;
 pub(crate) mod math;
+mod offsets;
 mod preparse;
 
 use std::ops::Range;
@@ -41,6 +42,7 @@ use math::{
     MathRestoreState, restore_escaped_math_brackets, restore_math_placeholders,
     shield_math_segments,
 };
+use offsets::OffsetMap;
 use preparse::{
     detect_repeated_leading_segment, extract_frontmatter, infer_probable_frontmatter,
     normalize_preparse_input,
@@ -78,6 +80,8 @@ pub struct ParseOptions {
 pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     let preparse = normalize_preparse_input(input);
     let parse_input = preparse.input;
+    // Maps decoded (`parse_input`) positions back to `input` positions.
+    let decode_map = preparse.offset_map;
     let mut diagnostics: Vec<Diagnostic> = preparse.diagnostics;
     let (frontmatter, frontmatter_len) = match extract_frontmatter(&parse_input) {
         (Some(frontmatter), len) => (Some(frontmatter), len),
@@ -98,14 +102,17 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     if let Some(dup) =
         detect_repeated_leading_segment(&parse_input, frontmatter_len, frontmatter.as_ref())
     {
-        let range = ByteRange::new(dup.start, dup.end);
+        // Report the duplicate boundary in original coordinates directly;
+        // this diagnostic is created before math shielding, so the final
+        // remap pass (which also undoes shielding) must not touch it.
+        let range = decode_map.map_range(ByteRange::new(dup.start, dup.end));
         if opts.normalize_repeated_leading_segment {
             diagnostics.push(
                 Diagnostic::new(
                     DiagnosticKind::Lossy,
                     format!(
                         "suspected duplicated leading segment removed at byte {} using signature [{}]",
-                        dup.start, dup.signature
+                        range.start, dup.signature
                     ),
                 )
                 .with_range(range),
@@ -117,7 +124,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                     DiagnosticKind::Normalized,
                     format!(
                         "suspected duplicated leading segment starts at byte {} (signature [{}]); content kept unchanged",
-                        dup.start, dup.signature
+                        range.start, dup.signature
                     ),
                 )
                 .with_range(range),
@@ -125,12 +132,20 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
         }
     }
 
+    // Every diagnostic from this point on (shielding + event walk) carries
+    // ranges in shielded-stream coordinates and is remapped to original
+    // coordinates at the end of the parse.
+    let stream_coord_diags_from = diagnostics.len();
+
     let body_input = &parse_input[frontmatter_len..body_end];
     let math_shield = shield_math_segments(body_input, frontmatter_len);
     diagnostics.extend(math_shield.diagnostics);
+    // Maps shielded-stream positions back to decoded (`parse_input`) positions.
+    let shield_map = math_shield.offset_map;
     let parse_body_input = math_shield.shielded_input;
     let parse_stream_input = format!("{}{}", &parse_input[..frontmatter_len], parse_body_input);
-    let mut math_restore = MathRestoreState::new(math_shield.payloads);
+    let mut math_restore =
+        (!math_shield.disabled).then(|| MathRestoreState::new(math_shield.payloads));
 
     let id: DocumentId = Uuid::new_v4();
     let meta = DocumentMeta {
@@ -180,15 +195,18 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 opts.normalize_bare_callouts,
             ),
             Event::Text(s) => {
-                let restored = restore_math_placeholders(
-                    restore_escaped_math_brackets(
-                        s.into_string(),
-                        &parse_stream_input[range.start..range.end],
-                    ),
-                    &mut math_restore,
-                    &mut diagnostics,
-                    range.clone(),
+                let mut restored = restore_escaped_math_brackets(
+                    s.into_string(),
+                    &parse_stream_input[range.start..range.end],
                 );
+                if let Some(restore) = math_restore.as_mut() {
+                    restored = restore_math_placeholders(
+                        restored,
+                        restore,
+                        &mut diagnostics,
+                        range.clone(),
+                    );
+                }
                 push_inline(
                     &mut stack,
                     &mut top_body,
@@ -198,14 +216,24 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                     Inline::Text(restored),
                 )
             }
-            Event::Code(s) => push_inline(
-                &mut stack,
-                &mut top_body,
-                &mut diagnostics,
-                range,
-                id,
-                Inline::Code(s.into_string()),
-            ),
+            Event::Code(s) => {
+                // Shielding runs on raw text before cmark, so placeholders can
+                // land inside inline-code spans; restore them here too or the
+                // code content is silently replaced by the sentinel character.
+                let mut code = s.into_string();
+                if let Some(restore) = math_restore.as_mut() {
+                    code =
+                        restore_math_placeholders(code, restore, &mut diagnostics, range.clone());
+                }
+                push_inline(
+                    &mut stack,
+                    &mut top_body,
+                    &mut diagnostics,
+                    range,
+                    id,
+                    Inline::Code(code),
+                )
+            }
             Event::SoftBreak => {
                 let soft_break = if in_blockquote(&stack) {
                     // Preserve logical line boundaries in quoted content so
@@ -277,9 +305,47 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
         }
     }
     doc.body = top_body;
+
+    // Translate provenance and stream-coordinate diagnostics back to
+    // original-source byte offsets (undo math shielding, then newline
+    // decoding). Ranges recorded before shielding are already original.
+    if !(shield_map.is_identity() && decode_map.is_identity()) {
+        for node in &mut doc.body {
+            remap_block_node_ranges(node, &shield_map, &decode_map);
+        }
+        for diag in &mut diagnostics[stream_coord_diags_from..] {
+            if let Some(range) = diag.byte_range {
+                diag.byte_range = Some(decode_map.map_range(shield_map.map_range(range)));
+            }
+        }
+    }
+
     doc.meta.title = extract_title(&doc.body);
     doc.diagnostics = diagnostics;
     doc
+}
+
+/// Remap a block node's provenance range (and its children's, recursively)
+/// from shielded-stream coordinates back to original-source coordinates.
+fn remap_block_node_ranges(node: &mut BlockNode, shield_map: &OffsetMap, decode_map: &OffsetMap) {
+    if let Some(range) = node.prov.byte_range {
+        node.prov.byte_range = Some(decode_map.map_range(shield_map.map_range(range)));
+    }
+    match &mut node.block {
+        Block::BlockQuote { children } => {
+            for child in children {
+                remap_block_node_ranges(child, shield_map, decode_map);
+            }
+        }
+        Block::List { items, .. } => {
+            for item in items {
+                for child in &mut item.content {
+                    remap_block_node_ranges(child, shield_map, decode_map);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 // --- frames ------------------------------------------------------------
