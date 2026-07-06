@@ -104,6 +104,14 @@ where
         validate(&doc, Some(markdown.len()))
             .map_err(|err| Error::InvalidInput(format!("validation failed: {err}")))?;
 
+        // Content-hash deduplication (spec §7.4): re-ingesting identical raw
+        // content returns the existing document instead of storing a copy.
+        // Note: dedupe keys on raw content only, so differing IngestOptions
+        // do not bypass it.
+        if let Some(existing) = self.store.find_by_content_hash(&doc.meta.content_hash)? {
+            return Ok(existing);
+        }
+
         self.store.upsert_document(&doc)?;
 
         Ok(doc.meta.id)
