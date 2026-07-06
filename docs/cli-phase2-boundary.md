@@ -66,6 +66,6 @@ Persistence semantics are intentionally narrow:
 Use separate commands so shell newline escapes are not interpreted literally:
 
 ```bash
-./target/debug/nucklavee ingest-emit electromagnetic-valence.md --format markdown > /tmp/emv-after.md
+./target/debug/nucklavee ingest-emit tests/corpus/electromagnetic-valence.md --format markdown > /tmp/emv-after.md
 diff -u /tmp/emv-before.md /tmp/emv-after.md
 ```
