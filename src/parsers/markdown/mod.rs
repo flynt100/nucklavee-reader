@@ -12,8 +12,16 @@
 //! Everything else (raw HTML, task list markers, footnotes, metadata blocks,
 //! indented code blocks) is surfaced as a typed [`Diagnostic`] rather than
 //! silently dropped or flattened.
+//!
+//! Markdown-specific input-repair heuristics live in the private submodules:
+//! [`preparse`] (escaped-newline decode, frontmatter, duplicate-segment
+//! detection), [`math`] (math-span shielding), and [`heuristics`]
+//! (TSV-paragraph promotion, bare-callout normalization).
 
-use std::collections::VecDeque;
+mod heuristics;
+pub(crate) mod math;
+mod preparse;
+
 use std::ops::Range;
 
 use chrono::Utc;
@@ -26,9 +34,19 @@ use uuid::Uuid;
 use crate::Result;
 use crate::ir::{
     Block, BlockNode, ByteRange, Diagnostic, DiagnosticKind, Document, DocumentId, DocumentMeta,
-    Frontmatter, Inline, ListItem, Provenance, SourceFormat, SourceInfo, Style,
+    Inline, ListItem, Provenance, SourceFormat, SourceInfo, Style,
 };
 use crate::parsers::Parser;
+
+use heuristics::{Phase2bParagraphBlock, detect_phase2b_tabular_fallback};
+use math::{
+    MathRestoreState, restore_escaped_math_brackets, restore_math_placeholders,
+    shield_math_segments,
+};
+use preparse::{
+    detect_repeated_leading_segment, extract_frontmatter, infer_probable_frontmatter,
+    normalize_preparse_input,
+};
 
 #[derive(Debug, Default, Clone)]
 pub struct MarkdownParser;
@@ -265,398 +283,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
     doc
 }
 
-fn extract_frontmatter(input: &str) -> (Option<Frontmatter>, usize) {
-    if !input.starts_with("---") {
-        return (None, 0);
-    }
-    let Some((first_line, mut offset)) = read_line(input, 0) else {
-        return (None, 0);
-    };
-    if !is_frontmatter_delimiter(first_line) {
-        return (None, 0);
-    }
-
-    let yaml_start = offset;
-    while let Some((line, next_offset)) = read_line(input, offset) {
-        if is_frontmatter_delimiter(line) {
-            let yaml_slice = &input[yaml_start..offset];
-            let yaml = yaml_slice.replace("\r\n", "\n");
-            return (Some(Frontmatter { yaml }), next_offset);
-        }
-        offset = next_offset;
-    }
-
-    (None, 0)
-}
-
-struct NormalizedInput {
-    input: String,
-    diagnostics: Vec<Diagnostic>,
-}
-
-#[derive(Debug, Default)]
-struct ShieldedMathInput {
-    shielded_input: String,
-    payloads: Vec<String>,
-    diagnostics: Vec<Diagnostic>,
-}
-
-#[derive(Debug)]
-struct MathRestoreState {
-    pending: VecDeque<String>,
-}
-
-impl MathRestoreState {
-    fn new(payloads: Vec<String>) -> Self {
-        Self {
-            pending: VecDeque::from(payloads),
-        }
-    }
-}
-
-fn normalize_preparse_input(input: &str) -> NormalizedInput {
-    let mut diagnostics = Vec::new();
-    if appears_single_line_escaped_markdown(input) {
-        let decoded = decode_escaped_newlines(input);
-        if decoded != input {
-            diagnostics.push(Diagnostic::new(
-                DiagnosticKind::Normalized,
-                "decoded escaped newline stream before markdown parse",
-            ));
-            return NormalizedInput {
-                input: decoded,
-                diagnostics,
-            };
-        }
-    }
-
-    NormalizedInput {
-        input: input.to_string(),
-        diagnostics,
-    }
-}
-
-fn appears_single_line_escaped_markdown(input: &str) -> bool {
-    let trimmed = input.trim_end_matches(['\n', '\r']);
-    !trimmed.contains('\n') && trimmed.contains("\\n")
-}
-
-fn decode_escaped_newlines(input: &str) -> String {
-    input.replace("\\r\\n", "\n").replace("\\n", "\n")
-}
-
-const MATH_PLACEHOLDER: char = '\u{00A4}';
-
-fn shield_math_segments(input: &str, range_offset: usize) -> ShieldedMathInput {
-    let mut out = String::with_capacity(input.len());
-    let mut payloads = Vec::new();
-    let mut diagnostics = Vec::new();
-    let mut i = 0usize;
-
-    while i < input.len() {
-        if let Some((end, payload, diagnostic)) = try_match_math_span(input, i) {
-            if let Some(message) = diagnostic {
-                diagnostics.push(
-                    Diagnostic::new(DiagnosticKind::Normalized, message)
-                        .with_range(ByteRange::new(range_offset + i, range_offset + end)),
-                );
-                out.push_str(&input[i..end]);
-            } else {
-                payloads.push(payload);
-                out.push(MATH_PLACEHOLDER);
-            }
-            i = end;
-            continue;
-        }
-
-        let mut iter = input[i..].char_indices();
-        let (_, ch) = iter
-            .next()
-            .expect("scanner should always have remaining char");
-        out.push(ch);
-        i += ch.len_utf8();
-    }
-
-    ShieldedMathInput {
-        shielded_input: out,
-        payloads,
-        diagnostics,
-    }
-}
-
-fn try_match_math_span(input: &str, start: usize) -> Option<(usize, String, Option<String>)> {
-    if input[start..].starts_with('$') && !is_escaped_delimiter(input, start) {
-        let end = find_unescaped_char(input, start + 1, '$');
-        return match end {
-            Some(close) => {
-                if input[start + 1..close].is_empty() || input[start + 1..close].contains('\n') {
-                    Some((
-                        close + 1,
-                        String::new(),
-                        Some("skipped ambiguous inline math span during shielding".to_string()),
-                    ))
-                } else {
-                    Some((close + 1, input[start..close + 1].to_string(), None))
-                }
-            }
-            None => Some((
-                start + 1,
-                String::new(),
-                Some("found unmatched '$' delimiter; leaving text unchanged".to_string()),
-            )),
-        };
-    }
-
-    if input[start..].starts_with("\\[") && !is_escaped_delimiter(input, start) {
-        let end = find_unescaped_substring_before_paragraph_break(input, start + 2, "\\]");
-        return match end {
-            Some(close_start) => Some((
-                close_start + 2,
-                input[start..close_start + 2].to_string(),
-                None,
-            )),
-            None => Some((
-                start + 2,
-                String::new(),
-                Some("found unmatched '\\\\[' delimiter; leaving text unchanged".to_string()),
-            )),
-        };
-    }
-
-    None
-}
-
-fn is_escaped_delimiter(input: &str, idx: usize) -> bool {
-    let bytes = input.as_bytes();
-    let mut slash_count = 0usize;
-    let mut p = idx;
-    while p > 0 && bytes[p - 1] == b'\\' {
-        slash_count += 1;
-        p -= 1;
-    }
-    slash_count % 2 == 1
-}
-
-fn find_unescaped_char(input: &str, mut idx: usize, target: char) -> Option<usize> {
-    while idx < input.len() {
-        let mut iter = input[idx..].char_indices();
-        let (rel, ch) = iter.next()?;
-        let at = idx + rel;
-        if ch == target && !is_escaped_delimiter(input, at) {
-            return Some(at);
-        }
-        idx = at + ch.len_utf8();
-    }
-    None
-}
-
-fn find_unescaped_substring_before_paragraph_break(
-    input: &str,
-    mut idx: usize,
-    needle: &str,
-) -> Option<usize> {
-    while idx < input.len() {
-        let rel = input[idx..].find(needle)?;
-        let at = idx + rel;
-        if input[idx..at].contains("\n\n") {
-            return None;
-        }
-        if !is_escaped_delimiter(input, at) {
-            return Some(at);
-        }
-        idx = at + needle.len();
-    }
-    None
-}
-
-fn restore_math_placeholders(
-    parsed_text: String,
-    restore: &mut MathRestoreState,
-    diagnostics: &mut Vec<Diagnostic>,
-    range: Range<usize>,
-) -> String {
-    if !parsed_text.contains(MATH_PLACEHOLDER) {
-        return parsed_text;
-    }
-    let mut out = String::with_capacity(parsed_text.len());
-    for ch in parsed_text.chars() {
-        if ch == MATH_PLACEHOLDER {
-            if let Some(payload) = restore.pending.pop_front() {
-                out.push_str(&payload);
-            } else {
-                diagnostics.push(
-                    Diagnostic::new(
-                        DiagnosticKind::Normalized,
-                        "math shielding restore placeholder had no matching payload; leaving placeholder as-is",
-                    )
-                    .with_range(ByteRange::new(range.start, range.end)),
-                );
-                out.push(ch);
-            }
-        } else {
-            out.push(ch);
-        }
-    }
-    out
-}
-
-fn infer_probable_frontmatter(input: &str) -> Option<(Frontmatter, usize)> {
-    if input.starts_with("---") {
-        return None;
-    }
-
-    let mut offset = 0usize;
-    let mut yaml_end = 0usize;
-    let mut key_value_lines = 0usize;
-    let mut saw_nonempty = false;
-
-    while let Some((line, next_offset)) = read_line(input, offset) {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            break;
-        }
-        saw_nonempty = true;
-        if is_probable_yaml_key_value_line(trimmed) {
-            key_value_lines += 1;
-            yaml_end = next_offset;
-            offset = next_offset;
-            continue;
-        }
-        break;
-    }
-
-    if !saw_nonempty || key_value_lines < 2 {
-        return None;
-    }
-
-    Some((
-        Frontmatter {
-            yaml: input[..yaml_end].replace("\r\n", "\n"),
-        },
-        yaml_end,
-    ))
-}
-
-fn is_probable_yaml_key_value_line(line: &str) -> bool {
-    let Some((key, _value)) = line.split_once(':') else {
-        return false;
-    };
-    if key.is_empty() {
-        return false;
-    }
-    key.chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-}
-
-fn is_frontmatter_delimiter(line: &str) -> bool {
-    line.trim_end_matches('\r') == "---"
-}
-
-fn read_line(input: &str, offset: usize) -> Option<(&str, usize)> {
-    if offset > input.len() {
-        return None;
-    }
-    if offset == input.len() {
-        return None;
-    }
-    let bytes = input.as_bytes();
-    let mut i = offset;
-    while i < bytes.len() && bytes[i] != b'\n' {
-        i += 1;
-    }
-
-    let (line_end, next_offset) = if i < bytes.len() && bytes[i] == b'\n' {
-        let end = if i > offset && bytes[i - 1] == b'\r' {
-            i - 1
-        } else {
-            i
-        };
-        (end, i + 1)
-    } else {
-        (i, i)
-    };
-    Some((&input[offset..line_end], next_offset))
-}
-
-#[derive(Debug, Clone)]
-struct DuplicateSegmentBoundary {
-    start: usize,
-    end: usize,
-    signature: String,
-}
-
-fn detect_repeated_leading_segment(
-    input: &str,
-    frontmatter_len: usize,
-    frontmatter: Option<&Frontmatter>,
-) -> Option<DuplicateSegmentBoundary> {
-    const MIN_GAP_BYTES: usize = 128;
-
-    let mut heading_line: Option<&str> = None;
-    let mut heading_offset = frontmatter_len;
-    let mut offset = frontmatter_len;
-    while let Some((line, next_offset)) = read_line(input, offset) {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() && trimmed.starts_with('#') {
-            heading_line = Some(trimmed);
-            heading_offset = offset;
-            break;
-        }
-        if next_offset <= offset {
-            break;
-        }
-        offset = next_offset;
-    }
-
-    let heading_line = heading_line?;
-    let search_from = heading_offset.saturating_add(MIN_GAP_BYTES);
-    if search_from >= input.len() {
-        return None;
-    }
-
-    let needle = format!("\n{heading_line}\n");
-    let rel = input[search_from..].find(&needle)?;
-    let dup_start = search_from + rel + 1;
-
-    if dup_start < (input.len() / 3) {
-        return None;
-    }
-
-    let mut signature_parts: Vec<String> = Vec::new();
-    if let Some(frontmatter) = frontmatter {
-        for line in frontmatter.yaml.lines() {
-            let trimmed = line.trim();
-            if let Some((key, _)) = trimmed.split_once(':') {
-                let key = key.trim();
-                if !key.is_empty() {
-                    signature_parts.push(format!("fm:{key}"));
-                }
-            }
-            if signature_parts.len() >= 4 {
-                break;
-            }
-        }
-    }
-    signature_parts.push(format!("h:{}", heading_line.trim_start_matches('#').trim()));
-
-    Some(DuplicateSegmentBoundary {
-        start: dup_start,
-        end: input.len(),
-        signature: signature_parts.join(","),
-    })
-}
-
 // --- frames ------------------------------------------------------------
-
-fn restore_escaped_math_brackets(parsed_text: String, source_slice: &str) -> String {
-    if source_slice == "\\[" && parsed_text == "[" {
-        return "\\[".to_string();
-    }
-    if source_slice == "\\]" && parsed_text == "]" {
-        return "\\]".to_string();
-    }
-    parsed_text
-}
 
 enum Frame {
     Document,
@@ -924,7 +551,8 @@ fn end_tag(
             let source_slice = &source[start..end_range.end];
             if normalize_bare_callouts
                 && !in_blockquote(stack)
-                && let Some(blockquote) = normalize_bare_callout_paragraph(source_slice, prov.clone())
+                && let Some(blockquote) =
+                    heuristics::normalize_bare_callout_paragraph(source_slice, prov.clone())
             {
                 append_block(stack, top_body, blockquote);
                 return;
@@ -1311,124 +939,6 @@ fn heading_level_to_u8(level: HeadingLevel) -> u8 {
         HeadingLevel::H5 => 5,
         HeadingLevel::H6 => 6,
     }
-}
-
-enum Phase2bParagraphBlock {
-    Table {
-        headers: Vec<Vec<Inline>>,
-        rows: Vec<Vec<Vec<Inline>>>,
-    },
-    GenericTableHint {
-        content: Vec<Inline>,
-        message: String,
-    },
-}
-
-fn detect_phase2b_tabular_fallback(source_slice: &str) -> Option<Phase2bParagraphBlock> {
-    let normalized = source_slice
-        .trim()
-        .trim_matches('\n')
-        .replace("\r\n", "\n")
-        .replace('\r', "\n");
-    let lines: Vec<&str> = normalized.lines().collect();
-    if lines.len() < 2 {
-        return None;
-    }
-
-    let mut widths: Vec<usize> = Vec::with_capacity(lines.len());
-    let mut tabbed_lines = 0usize;
-    let mut max_width = 0usize;
-    for line in &lines {
-        if line.contains('\t') {
-            tabbed_lines += 1;
-            let width = line.split('\t').count();
-            max_width = max_width.max(width);
-            widths.push(width);
-        } else {
-            widths.push(1);
-        }
-    }
-
-    if tabbed_lines < 2 || max_width < 2 {
-        return None;
-    }
-
-    let first_width = widths[0];
-    let all_rows_have_tabs = lines.iter().all(|line| line.contains('\t'));
-    let shape_consistent = first_width >= 2 && widths.iter().all(|w| *w == first_width);
-    if all_rows_have_tabs && shape_consistent {
-        let mut parsed_rows: Vec<Vec<Vec<Inline>>> = lines
-            .iter()
-            .map(|line| {
-                line.split('\t')
-                    .map(|cell| vec![Inline::Text(cell.trim().to_string())])
-                    .collect()
-            })
-            .collect();
-        let headers = parsed_rows.remove(0);
-        return Some(Phase2bParagraphBlock::Table {
-            headers,
-            rows: parsed_rows,
-        });
-    }
-
-    let mismatch_count = widths
-        .iter()
-        .filter(|w| **w != first_width && **w > 1)
-        .count();
-    if mismatch_count > 0 || !all_rows_have_tabs {
-        return Some(Phase2bParagraphBlock::GenericTableHint {
-            content: vec![Inline::Text(normalized)],
-            message: "tab-delimited table-like paragraph had inconsistent row widths; preserved as GenericBlock".to_string(),
-        });
-    }
-
-    None
-}
-
-fn normalize_bare_callout_paragraph(source_slice: &str, prov: Provenance) -> Option<BlockNode> {
-    let normalized = source_slice
-        .trim()
-        .trim_matches('\n')
-        .replace("\r\n", "\n")
-        .replace('\r', "\n");
-    let mut lines = normalized.lines();
-    let first = lines.next()?.trim_start();
-    if !first.starts_with("[!") {
-        return None;
-    }
-    let end_bracket = first.find(']')?;
-    if end_bracket < 3 {
-        return None;
-    }
-    let label = &first[2..end_bracket];
-    if label.is_empty()
-        || !label
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
-    {
-        return None;
-    }
-
-    let mut paragraph_text = String::new();
-    for (idx, line) in normalized.lines().enumerate() {
-        if idx > 0 {
-            paragraph_text.push('\n');
-        }
-        paragraph_text.push_str(line.trim_end());
-    }
-
-    Some(BlockNode::new(
-        Block::BlockQuote {
-            children: vec![BlockNode::new(
-                Block::Paragraph {
-                    content: vec![Inline::Text(paragraph_text)],
-                },
-                prov.clone(),
-            )],
-        },
-        prov,
-    ))
 }
 
 /// Flatten inlines into a plain string (used for heading text in section paths
