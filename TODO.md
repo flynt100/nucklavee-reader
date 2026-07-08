@@ -52,12 +52,15 @@ Primary goal: robust content extraction from noisy HTML and parity with markdown
    - Headings/paragraphs/code (with `language-*`)/tables (header promotion,
      ragged-row padding)/lists/blockquotes/hr + full inline set; unknown
      elements degrade to `GenericBlock` with class hints and diagnostics.
-3. [ ] Implement HTML emitter for faithful structural output from IR. *(audit Task 3)*
-4. [ ] Add cross-format tests:
+3. [x] Implement HTML emitter for faithful structural output from IR.
+   - `src/emitters/html.rs` (spec §5.2 mapping, HTML-escaped, Strong/Em/Del
+     style mapping matched to the parser's inverse); wired to `Format::Html`
+     in `Library::emit` and CLI `--format html`.
+4. [x] Add cross-format tests:
    - [x] html -> IR -> markdown (with structural-equivalence reparse gate)
-   - [ ] markdown -> IR -> html *(audit Task 3)*
+   - [x] markdown -> IR -> html (`tests/cross_format.rs`, structural-equivalence gate)
    - [x] structural equivalence checks where semantically valid
-     (`structural_diff_bodies` + three realistic fixture pages)
+     (`structural_diff_bodies` + realistic fixture pages + rich md fixture)
 5. [ ] Add URL-source path validation (`Source::Url`) and metadata/title extraction tests. *(audit Task 4; `<title>`/`<h1>`/`og:title` extraction is already implemented and tested for file/raw ingest)*
 
 ## Phase 4 — Persistence, Chunking, Embeddings, Vector Retrieval
@@ -110,17 +113,18 @@ This section is the single status source for the roadmap. (`NEXT_BUILD_PUSH.md`
 was retired in the 2026-07-06 cleanup; per-push task specs now live in
 `docs/full-scope-audit-2026-07-06.md`.)
 
-- **Current truth:** Markdown parser/emitter + roundtrip harness complete;
-  **HTML parser (content extraction + DOM→IR) complete** with html→IR→markdown
-  cross-format equivalence gates; trait surfaces for Phase 4/5 frozen;
-  content-hash ingest dedupe live; provenance byte ranges in original-source
-  coordinates.
+- **Current truth:** Markdown + HTML **parsers and emitters** complete, with
+  bidirectional cross-format equivalence gates (html↔markdown via
+  `structural_diff_bodies`); shared `SectionPathTracker` across parsers;
+  trait surfaces for Phase 4/5 frozen; content-hash ingest dedupe live;
+  provenance byte ranges in original-source coordinates.
 - **Phase 2B state:** complete (gate command green).
-- **Phase 3 state:** parser half **complete** (audit Task 2). Remaining:
-  HTML emitter + markdown→IR→html gate (Task 3), URL ingestion (Task 4).
-- **Exact next focus:** audit **Task 3** (HTML emitter + cross-format gate);
-  Tasks 5/6/8 (plaintext emitter, SQLite store, embedder+index) are
-  unblocked and parallelizable.
+- **Phase 3 state:** **complete except URL ingestion** (audit Tasks 2 & 3
+  done; Task 4 remaining).
+- **Exact next focus:** audit **Task 4** (URL ingestion) to close Phase 3,
+  then the Phase-4 track — Tasks 5/6/8 (plaintext emitter, SQLite store,
+  embedder+index) are unblocked and parallelizable, feeding Task 7 (chunker)
+  and Task 9 (query/context pipeline).
 - **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).

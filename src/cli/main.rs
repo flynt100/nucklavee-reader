@@ -143,6 +143,7 @@ fn ingest_doc_id(
 fn parse_format(raw: &str) -> Result<Format> {
     match raw {
         "markdown" => Ok(Format::Markdown),
+        "html" => Ok(Format::Html),
         _ => Err(phase2_contract::invalid_input(
             phase2_contract::unsupported_format_message(raw),
         )),

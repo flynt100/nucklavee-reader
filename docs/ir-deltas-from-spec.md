@@ -45,10 +45,26 @@ Frozen in the 2026-07-06 trait-surface push (Task 1 of the audit plan):
 ## Parsers / emitters (spec §4–5)
 
 - There is **no `Parser` trait**. Each format exposes free functions and/or an
-  inherent-method struct (`parsers::markdown::parse_markdown(input, ParseOptions)`)
-  because parse options are format-specific. Re-introduce a trait only when a
-  cross-format abstraction is actually needed.
+  inherent-method struct (`parsers::markdown::parse_markdown(input, ParseOptions)`,
+  `parsers::html::parse_html(input, HtmlParseOptions)`) because parse options
+  are format-specific. Re-introduce a trait only when a cross-format
+  abstraction is actually needed.
+- Shared parser helpers live in `parsers/mod.rs`: `sha256_hex`,
+  `inlines_to_plain`, `GENERIC_BLOCK_DEFAULT_CONFIDENCE`, and
+  `SectionPathTracker` (the heading→section-path algorithm used by both
+  parsers — do not re-implement it per format).
 - `Emitter` trait exists (`emit(&self, &Document) -> Result<String>`).
+- The HTML emitter (`emitters::html::emit_html`) produces a **fragment**
+  (block sequence, no `<html>`/`<body>` wrapper) so it can be re-ingested and
+  embedded. Style mapping is the inverse of the parser's:
+  Strong→`<strong>`, Emphasis→`<em>`, Strikethrough→`<del>`. This keeps
+  markdown → IR → html → IR structurally stable.
+- Cross-format equivalence (either direction) is asserted with
+  `ir::structural_diff_bodies`, which compares normalized block trees and
+  ignores `meta` (format/title/frontmatter differ legitimately across
+  formats). Whitespace-heavy text (e.g. soft-break newlines inside markdown
+  blockquotes) is the known "not semantically valid" edge that HTML's
+  whitespace collapsing does not preserve; cross-format fixtures avoid it.
 - The markdown parser applies markdown-specific input-repair heuristics
   (escaped-newline decode, math shielding, unfenced-frontmatter inference,
   TSV-paragraph promotion, bare-callout normalization — see

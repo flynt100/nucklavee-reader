@@ -30,8 +30,13 @@ In short: **normalize anything, preserve structure, and make it searchable.**
   promotion + ragged-row padding), nested lists, blockquotes, links, images,
   styled text; title from `<title>` → `<h1>` → `og:title`; unclassifiable
   elements degrade to `GenericBlock` with class-name hints and diagnostics.
-- **Cross-format integrity**: html → IR → markdown → IR structural
-  equivalence is enforced on realistic docs-site / wiki / blog fixture pages.
+- **HTML emit** (Phase 3, Task 3): IR → semantic HTML (spec §5.2), escaped,
+  with Strong/Em/Del style mapping; `--format html` on the CLI, `Format::Html`
+  in the library.
+- **Cross-format integrity, both directions**: html → IR → markdown → IR on
+  realistic docs-site / wiki / blog pages, and markdown → IR → html → IR on a
+  rich fixture (nested lists, tables, code, quotes, links, images), enforced
+  by structural equivalence.
 - **Provenance in original-source coordinates**: block byte ranges survive
   the parser's internal input rewrites (markdown); HTML blocks carry heading
   `section_path` provenance.
@@ -44,7 +49,7 @@ In short: **normalize anything, preserve structure, and make it searchable.**
 
 ## What Is Not Implemented Yet
 
-- HTML **emitter** (Task 3) and URL ingestion (Task 4)
+- URL ingestion (Task 4)
 - PlainText emitter (Task 5)
 - SQLite persistence (Task 6), chunking (Task 7), embeddings + vector index
   (Task 8), query/context-window pipeline (Task 9)
@@ -62,8 +67,8 @@ Per-task scopes, guardrails, and acceptance criteria live in
 1. ~~Phase 1 / 2A / 2B — markdown core loop + hardening~~ ✅
 2. ~~Task 0/1 — cleanup, trait freeze, dedupe, provenance remap~~ ✅
 3. ~~Task 2 — HTML parser (content extraction + DOM→IR)~~ ✅
-4. Task 3 — HTML emitter + cross-format gate (markdown → IR → html → IR)
-5. Task 4 — URL ingestion
+4. ~~Task 3 — HTML emitter + cross-format gates (both directions)~~ ✅
+5. Task 4 — URL ingestion (closes Phase 3)
 6. Tasks 5–9 — plaintext emitter, SQLite store, chunker, embedder + vector
    index, end-to-end query/context pipeline
 7. Task 10 — CLI rework
@@ -91,11 +96,14 @@ cargo run --bin nucklavee -- ingest-emit tests/corpus/electromagnetic-valence.md
 
 # HTML → markdown (content extraction + DOM→IR mapping)
 cargo run --bin nucklavee -- ingest-emit tests/fixtures/html/docs_site.html --format markdown
+
+# Either source → HTML
+cargo run --bin nucklavee -- ingest-emit tests/fixtures/06_headings.md --format html
 ```
 
-`--format` currently supports exactly: `markdown`.
+`--format` supports `markdown` and `html`.
 If another format is passed, the CLI/runtime error string is:
-`unsupported format '<value>'. supported: markdown`.
+`unsupported format '<value>'. supported: markdown, html`.
 
 Document IDs are process-local (in-memory store); use `ingest-emit` for
 reliable single-process behavior. For the complete command boundary and

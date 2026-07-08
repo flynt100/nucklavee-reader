@@ -21,7 +21,16 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > (`tests/html_ingest.rs`, 17 tests) and updated boundary contracts. A known
 > limitation is documented for Task 3/4 pickup: math-like `$…$` syntax inside
 > link URLs is still shielded by the markdown parser pre-cmark (pre-existing,
-> symmetric). Tasks 3+ remain open and unblocked; Tasks 5/6/8 stay
+> symmetric).
+>
+> **A behavior-neutral parser-dedup pass** then landed (sanity-check items):
+> shared `parsers::SectionPathTracker` + `GENERIC_BLOCK_DEFAULT_CONFIDENCE`,
+> consolidated HTML whitespace helpers, and doc comments pinning the
+> `ir::normalize` vs HTML `finalize_inlines` distinction. **Task 3 (HTML
+> emitter) is complete**: `src/emitters/html.rs` (spec §5.2), wired to
+> `Format::Html` + CLI `--format html`, with markdown→IR→html→IR structural
+> gates (`tests/cross_format.rs`) closing the second cross-format direction.
+> Phase 3 is complete except URL ingestion (Task 4). Tasks 5/6/8 stay
 > parallelizable.
 
 ---

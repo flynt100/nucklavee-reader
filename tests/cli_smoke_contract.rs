@@ -14,12 +14,13 @@ fn cli() -> Command {
 
 #[test]
 fn ingest_emit_rejects_unsupported_format_with_expected_parse_error() {
+    // `text` (PlainText) is not a supported emit format until Task 5.
     let output = cli()
         .args([
             "ingest-emit",
             "tests/fixtures/01_basic.md",
             "--format",
-            "html",
+            "text",
         ])
         .output()
         .expect("failed to run nucklavee binary");
@@ -32,12 +33,37 @@ fn ingest_emit_rejects_unsupported_format_with_expected_parse_error() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("invalid value 'html' for '--format <FORMAT>'"),
+        stderr.contains("invalid value 'text' for '--format <FORMAT>'"),
         "missing clap invalid-format boundary message: {stderr}"
     );
     assert!(
-        stderr.contains(&phase2_contract::unsupported_format_message("html")),
+        stderr.contains(&phase2_contract::unsupported_format_message("text")),
         "missing domain-specific invalid-format reason: {stderr}"
+    );
+}
+
+#[test]
+fn ingest_emit_supports_html_output_format() {
+    let output = cli()
+        .args([
+            "ingest-emit",
+            "tests/fixtures/01_basic.md",
+            "--format",
+            "html",
+        ])
+        .output()
+        .expect("failed to run nucklavee binary");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "html emit should succeed in Phase 3: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("<h1>") && stdout.contains("</p>"),
+        "expected HTML output: {stdout}"
     );
 }
 
