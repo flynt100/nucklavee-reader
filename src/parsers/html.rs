@@ -30,7 +30,9 @@ use crate::ir::{
     Block, BlockNode, Diagnostic, DiagnosticKind, Document, DocumentId, DocumentMeta, Inline,
     ListItem, Provenance, SourceFormat, SourceInfo, Style,
 };
-use crate::parsers::{inlines_to_plain, sha256_hex};
+use crate::parsers::{
+    GENERIC_BLOCK_DEFAULT_CONFIDENCE, SectionPathTracker, inlines_to_plain, sha256_hex,
+};
 
 /// Phase-3 HTML parser.
 #[derive(Debug, Default)]
@@ -86,8 +88,7 @@ pub fn parse_html(input: &str, opts: HtmlParseOptions) -> Document {
 
     let mut ctx = Ctx {
         doc_id: id,
-        section_path: Vec::new(),
-        heading_levels: Vec::new(),
+        section: SectionPathTracker::new(),
         diagnostics: Vec::new(),
         reported: HashSet::new(),
     };
@@ -122,23 +123,16 @@ pub fn parse_html(input: &str, opts: HtmlParseOptions) -> Document {
 
 struct Ctx {
     doc_id: DocumentId,
-    section_path: Vec<String>,
-    heading_levels: Vec<u8>,
+    section: SectionPathTracker,
     diagnostics: Vec<Diagnostic>,
     /// Dedupe key set so per-tag diagnostics are reported once per document.
     reported: HashSet<String>,
 }
 
 impl Ctx {
+    /// Provenance for a non-heading block: the section it sits under.
     fn prov(&self) -> Provenance {
-        Provenance::new(self.doc_id).with_section_path(self.section_path.clone())
-    }
-
-    /// Provenance for a heading: the section path *above* it.
-    fn heading_prov(&self) -> Provenance {
-        let mut path = self.section_path.clone();
-        path.pop();
-        Provenance::new(self.doc_id).with_section_path(path)
+        Provenance::new(self.doc_id).with_section_path(self.section.current())
     }
 
     fn report_once(&mut self, key: String, kind: DiagnosticKind, message: String) {
@@ -355,20 +349,10 @@ fn handle_block_element(el: ElementRef<'_>, blocks: &mut Vec<BlockNode>, ctx: &m
             if content.is_empty() {
                 return;
             }
-            // Update the section path exactly like the markdown parser: pop
-            // to the parent of this level, push the new heading text.
-            while ctx
-                .heading_levels
-                .last()
-                .map(|l| *l >= level)
-                .unwrap_or(false)
-            {
-                ctx.heading_levels.pop();
-                ctx.section_path.pop();
-            }
-            ctx.heading_levels.push(level);
-            ctx.section_path.push(inlines_to_plain(&content));
-            let prov = ctx.heading_prov();
+            // Attribute the heading with the section path above it (shared
+            // tracker; see parsers::SectionPathTracker).
+            let parent = ctx.section.enter_heading(level, inlines_to_plain(&content));
+            let prov = Provenance::new(ctx.doc_id).with_section_path(parent);
             blocks.push(BlockNode::new(Block::Heading { level, content }, prov));
         }
         "p" | "dt" | "dd" | "caption" => {
@@ -464,7 +448,7 @@ fn handle_unknown_block(
         Block::GenericBlock {
             content,
             hint: Some(hint),
-            confidence: 0.5,
+            confidence: GENERIC_BLOCK_DEFAULT_CONFIDENCE,
         },
         ctx.prov(),
     ));
@@ -775,6 +759,11 @@ fn code_language_of(pre: ElementRef<'_>) -> Option<String> {
 }
 
 // --- text helpers ------------------------------------------------------------
+//
+// These implement the HTML side of "stripping": collapsing the significant
+// whitespace of source HTML down to the normalized text the IR stores. This
+// is intentionally *not* shared with `ir::normalize` (which stays
+// whitespace-agnostic for cross-format comparison — see its doc comment).
 
 /// Collapse HTML whitespace runs to single spaces, preserving whether the
 /// node started/ended with whitespace (word boundaries between elements).
@@ -812,8 +801,8 @@ fn collapse_whitespace(raw: &str) -> String {
     out
 }
 
-/// Merge adjacent text nodes, collapse whitespace runs created by merging,
-/// trim the ends of the inline sequence, and drop empties.
+/// Merge adjacent text nodes, collapse whitespace runs created at merge
+/// boundaries, trim the ends of the inline sequence, and drop empties.
 fn finalize_inlines(inlines: Vec<Inline>) -> Vec<Inline> {
     let mut out: Vec<Inline> = Vec::with_capacity(inlines.len());
     for inline in inlines {
@@ -823,7 +812,13 @@ fn finalize_inlines(inlines: Vec<Inline>) -> Vec<Inline> {
                     continue;
                 }
                 match out.last_mut() {
-                    Some(Inline::Text(prev)) => prev.push_str(&s),
+                    // Re-collapse only at the join: each node is already
+                    // single-space-collapsed, so merging can create at most a
+                    // double space at the boundary.
+                    Some(Inline::Text(prev)) => {
+                        prev.push_str(&s);
+                        *prev = collapse_whitespace(prev);
+                    }
                     _ => out.push(Inline::Text(s)),
                 }
             }
@@ -831,11 +826,6 @@ fn finalize_inlines(inlines: Vec<Inline>) -> Vec<Inline> {
         }
     }
 
-    for inline in &mut out {
-        if let Inline::Text(s) = inline {
-            *s = collapse_space_runs(s);
-        }
-    }
     if let Some(Inline::Text(s)) = out.first_mut() {
         *s = s.trim_start().to_string();
     }
@@ -843,22 +833,5 @@ fn finalize_inlines(inlines: Vec<Inline>) -> Vec<Inline> {
         *s = s.trim_end().to_string();
     }
     out.retain(|inline| !matches!(inline, Inline::Text(s) if s.is_empty()));
-    out
-}
-
-fn collapse_space_runs(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut in_ws = false;
-    for ch in s.chars() {
-        if ch == ' ' {
-            if !in_ws {
-                out.push(' ');
-            }
-            in_ws = true;
-        } else {
-            out.push(ch);
-            in_ws = false;
-        }
-    }
     out
 }

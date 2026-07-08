@@ -31,7 +31,9 @@ use pulldown_cmark::{
 };
 use uuid::Uuid;
 
-use crate::parsers::{inlines_to_plain, sha256_hex};
+use crate::parsers::{
+    GENERIC_BLOCK_DEFAULT_CONFIDENCE, SectionPathTracker, inlines_to_plain, sha256_hex,
+};
 
 use crate::ir::{
     Block, BlockNode, ByteRange, Diagnostic, DiagnosticKind, Document, DocumentId, DocumentMeta,
@@ -171,9 +173,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
 
     let mut stack: Vec<Frame> = vec![Frame::Document];
     let mut top_body: Vec<BlockNode> = Vec::new();
-    let mut section_path: Vec<String> = Vec::new();
-    // Previous heading levels in source order; used to pop section path.
-    let mut heading_levels: Vec<u8> = Vec::new();
+    let mut section = SectionPathTracker::new();
 
     for (event, range) in parser.into_offset_iter() {
         // `into_offset_iter()` ranges are relative to `body_input` (the
@@ -182,15 +182,14 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
         // adding `frontmatter_len`.
         let range = (range.start + frontmatter_len)..(range.end + frontmatter_len);
         match event {
-            Event::Start(tag) => start_tag(tag, range, &mut stack, &section_path, id),
+            Event::Start(tag) => start_tag(tag, range, &mut stack, &section.current(), id),
             Event::End(end) => end_tag(
                 end,
                 range,
                 &parse_stream_input,
                 &mut stack,
                 &mut top_body,
-                &mut section_path,
-                &mut heading_levels,
+                &mut section,
                 &mut diagnostics,
                 id,
                 opts.normalize_bare_callouts,
@@ -262,14 +261,15 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
                 Inline::LineBreak,
             ),
             Event::Rule => {
+                let current = section.current();
                 flush_item_pending_inlines_if_block_boundary(
                     &mut stack,
                     &Tag::Paragraph,
-                    &section_path,
+                    &current,
                     id,
                     range.start,
                 );
-                let prov = prov_for(id, &section_path, range.clone());
+                let prov = prov_for(id, &current, range.clone());
                 append_block(
                     &mut stack,
                     &mut top_body,
@@ -568,8 +568,7 @@ fn end_tag(
     source: &str,
     stack: &mut Vec<Frame>,
     top_body: &mut Vec<BlockNode>,
-    section_path: &mut Vec<String>,
-    heading_levels: &mut Vec<u8>,
+    section: &mut SectionPathTracker,
     diagnostics: &mut Vec<Diagnostic>,
     doc_id: DocumentId,
     normalize_bare_callouts: bool,
@@ -608,12 +607,7 @@ fn end_tag(
 
     match (frame, end) {
         (Frame::Paragraph { inlines, start }, TagEnd::Paragraph) => {
-            let prov = standard_prov(
-                doc_id,
-                section_path,
-                start..end_range.end,
-                ProvSectionPathBranch::Current,
-            );
+            let prov = prov_for(doc_id, &section.current(), start..end_range.end);
             let source_slice = &source[start..end_range.end];
             if normalize_bare_callouts
                 && !in_blockquote(stack)
@@ -643,7 +637,7 @@ fn end_tag(
                             Block::GenericBlock {
                                 content,
                                 hint: Some("table-like:tab-delimited".to_string()),
-                                confidence: 0.5,
+                                confidence: GENERIC_BLOCK_DEFAULT_CONFIDENCE,
                             },
                             prov,
                         ),
@@ -664,23 +658,10 @@ fn end_tag(
             },
             TagEnd::Heading(_),
         ) => {
-            // Update section path state before attaching the heading.
-            while heading_levels.last().map(|l| *l >= level).unwrap_or(false) {
-                heading_levels.pop();
-                section_path.pop();
-            }
-            let title_text = inlines_to_plain(&inlines);
-            heading_levels.push(level);
-            section_path.push(title_text);
-
             // Attribute this heading with the section path *above* it so the
             // first heading under "root" shows an empty path.
-            let prov = standard_prov(
-                doc_id,
-                section_path,
-                start..end_range.end,
-                ProvSectionPathBranch::HeadingParent,
-            );
+            let parent = section.enter_heading(level, inlines_to_plain(&inlines));
+            let prov = prov_for(doc_id, &parent, start..end_range.end);
             append_block(
                 stack,
                 top_body,
@@ -706,12 +687,7 @@ fn end_tag(
             // stores only the logical content and the emitter can add a
             // single newline before the closing fence unconditionally.
             let content = content.trim_end_matches('\n').to_string();
-            let prov = standard_prov(
-                doc_id,
-                section_path,
-                start..end_range.end,
-                ProvSectionPathBranch::Current,
-            );
+            let prov = prov_for(doc_id, &section.current(), start..end_range.end);
             append_block(
                 stack,
                 top_body,
@@ -719,12 +695,7 @@ fn end_tag(
             );
         }
         (Frame::BlockQuote { blocks, start }, TagEnd::BlockQuote) => {
-            let prov = standard_prov(
-                doc_id,
-                section_path,
-                start..end_range.end,
-                ProvSectionPathBranch::Current,
-            );
+            let prov = prov_for(doc_id, &section.current(), start..end_range.end);
             append_block(
                 stack,
                 top_body,
@@ -739,12 +710,7 @@ fn end_tag(
             },
             TagEnd::List(_),
         ) => {
-            let prov = standard_prov(
-                doc_id,
-                section_path,
-                start..end_range.end,
-                ProvSectionPathBranch::Current,
-            );
+            let prov = prov_for(doc_id, &section.current(), start..end_range.end);
             append_block(
                 stack,
                 top_body,
@@ -761,12 +727,7 @@ fn end_tag(
         ) => {
             if !pending_inlines.is_empty() {
                 let start = pending_start.unwrap_or(end_range.end);
-                let prov = standard_prov(
-                    doc_id,
-                    section_path,
-                    start..end_range.end.max(start),
-                    ProvSectionPathBranch::Current,
-                );
+                let prov = prov_for(doc_id, &section.current(), start..end_range.end.max(start));
                 blocks.push(BlockNode::new(
                     Block::Paragraph {
                         content: pending_inlines,
@@ -787,12 +748,7 @@ fn end_tag(
             },
             TagEnd::Table,
         ) => {
-            let prov = standard_prov(
-                doc_id,
-                section_path,
-                start..end_range.end,
-                ProvSectionPathBranch::Current,
-            );
+            let prov = prov_for(doc_id, &section.current(), start..end_range.end);
             append_block(
                 stack,
                 top_body,
@@ -976,24 +932,6 @@ fn prov_for(doc_id: DocumentId, section_path: &[String], range: Range<usize>) ->
     Provenance::new(doc_id)
         .with_range(ByteRange::new(range.start, range.end))
         .with_section_path(section_path.to_vec())
-}
-
-enum ProvSectionPathBranch {
-    Current,
-    HeadingParent,
-}
-
-fn standard_prov(
-    doc_id: DocumentId,
-    section_path: &[String],
-    range: Range<usize>,
-    branch: ProvSectionPathBranch,
-) -> Provenance {
-    let mut path = section_path.to_vec();
-    if matches!(branch, ProvSectionPathBranch::HeadingParent) {
-        path.pop();
-    }
-    prov_for(doc_id, &path, range)
 }
 
 fn heading_level_to_u8(level: HeadingLevel) -> u8 {
