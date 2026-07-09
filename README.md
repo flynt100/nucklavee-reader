@@ -50,16 +50,25 @@ In short: **normalize anything, preserve structure, and make it searchable.**
   the final URL as provenance. Network failures surface as typed errors.
 - **Content-hash deduplication** on ingest (spec §7.4): identical content
   returns the existing document ID.
-- **In-memory document store** implementing the full frozen `DocumentStore`
-  contract (hash lookup, listing, removal, chunk retrieval).
+- **Document stores**: an in-memory store and a **SQLite** store
+  (`rusqlite`, bundled), both implementing the full frozen `DocumentStore`
+  contract (hash lookup, listing, removal, chunk retrieval ordered by
+  sequence). SQLite persists the full IR as JSON, so a document ingested in
+  one process is retrievable and re-emittable in another. A shared
+  conformance suite runs against both backends.
+- **Embeddings + vector search primitives**: an `ApiEmbedder` (OpenAI-compatible
+  `/v1/embeddings`, blocking) and a `UsearchIndex` (cosine HNSW via `usearch`)
+  with add/search/remove and file persistence. Not yet wired into an
+  end-to-end `query` — that is Task 9.
 - **CLI**: `ingest` / `ingest-emit` over `.md`, `.html`, `.htm` files or
   `http(s)://` URLs, emitting `markdown` or `html`, with locked boundary
   errors for everything else.
 
 ## What Is Not Implemented Yet
 
-- SQLite persistence (Task 6), chunking (Task 7), embeddings + vector index
-  (Task 8), query/context-window pipeline (Task 9)
+- Chunking (Task 7) and the end-to-end query/context-window pipeline that
+  wires ingest → chunk → embed → index → search (Task 9). The storage,
+  embedding, and vector-index building blocks exist but are not yet connected.
 - Full CLI command set (`search`, `list`, `info`, `context`, `remove` — Task 10)
 - PDF pipeline (Tasks 11–12)
 
@@ -77,10 +86,11 @@ Per-task scopes, guardrails, and acceptance criteria live in
 4. ~~Task 3 — HTML emitter + cross-format gates (both directions)~~ ✅
 5. ~~Task 4 — URL ingestion~~ ✅ **(Phase 3 complete)**
 6. ~~Task 5 — PlainText emitter~~ ✅
-7. Tasks 6–9 — SQLite store, chunker, embedder + vector index, end-to-end
-   query/context pipeline
-8. Task 10 — CLI rework
-9. Tasks 11–12 — PDF pipeline
+7. ~~Task 6 — SQLite store~~ ✅ · ~~Task 8 — embedder + vector index~~ ✅
+8. Task 7 — structure-aware chunker
+9. Task 9 — pipeline wiring + `query` + `context_window`
+10. Task 10 — CLI rework
+11. Tasks 11–12 — PDF pipeline
 
 ## Development
 

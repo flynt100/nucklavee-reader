@@ -37,10 +37,38 @@ Frozen in the 2026-07-06 trait-surface push (Task 1 of the audit plan):
 
 - `DocumentStore`: `upsert_document`, `get_document`, `find_by_content_hash`,
   `list_documents`, `remove_document` (also removes the document's chunks),
-  `insert_chunks`, `get_chunks_by_document`, `get_chunks_by_ids`.
+  `insert_chunks`, `get_chunks_by_document` (**ordered by `sequence_index`** —
+  both backends), `get_chunks_by_ids` (request order preserved, unknown IDs
+  skipped).
 - `VectorIndex`: `add`, `remove`, `search`, `save(&Path)`, `load(&Path)`.
 - `Embedder`: unchanged from spec, **blocking I/O** — implementations use
   `reqwest::blocking`; no tokio/async runtime in the MVP.
+
+### Backend implementations (Tasks 6 & 8) and their edge cases
+
+- **`SqliteDocumentStore`** (`rusqlite`, `bundled`). Schema keeps the spec's
+  queryable columns *plus* a `doc_json` column holding the full serialized IR,
+  so cross-process `get_document`/`emit` works (the in-memory store cannot).
+  Schema version is tracked in `PRAGMA user_version`.
+  - *Discrepancy resolved:* `get_chunks_by_document` ordering was initially
+    insertion-order in the memory store vs `sequence_index` in SQLite; the
+    conformance suite caught it and both now sort by `sequence_index` (the
+    documented contract).
+  - *Dependency pin:* `rusqlite` is pinned to `0.32` — `0.40`'s
+    `libsqlite3-sys` build script uses a nightly-only `cfg_select!` macro that
+    does not compile on stable.
+- **`UsearchIndex`** (`usearch`, cosine HNSW). **Key-width bridge:** usearch
+  addresses vectors by `u64`, but `ChunkId` is a 128-bit UUID, so the index
+  keeps a bidirectional `u64 ⇆ ChunkId` map and assigns sequential `u64` keys.
+  `save`/`load` persist that map in a `<index>.keymap.json` sidecar (the raw
+  usearch file only stores `u64` keys). `search` returns
+  `(ChunkId, cosine_distance)` ascending (closest first).
+- **`ApiEmbedder`** (OpenAI-compatible `/v1/embeddings`, `reqwest::blocking`).
+  Request/response JSON is (de)serialized manually with `serde_json` because
+  reqwest's `json` feature is disabled to keep the dependency surface small.
+  Results are re-sorted by the provider's `index` field and validated against
+  the configured `dimension`. `use_env_proxy` mirrors `crate::net` so tests
+  hit a loopback mock directly.
 
 ## Parsers / emitters (spec §4–5)
 

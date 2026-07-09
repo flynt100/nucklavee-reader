@@ -42,9 +42,19 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > `SUPPORTED_FORMATS` is now `markdown, html, text`. The library `Format`
 > enum is therefore fully supported — the only remaining "unsupported format"
 > boundary is the CLI string parse (tested with `rtf`). The dead
-> `emitter_stub!` macro was removed. Next: the retrieval track — Task 6
-> (SQLite store) and Task 8 (embedder + usearch) are parallelizable, feeding
-> Task 7 (chunker), then Task 9 (query/context pipeline).
+> `emitter_stub!` macro was removed.
+>
+> **Tasks 6 and 8 are complete.** Task 6: `SqliteDocumentStore`
+> (`rusqlite` bundled, full-IR JSON column, `user_version` migration), with a
+> shared conformance suite over memory + sqlite + a reopen-persistence test.
+> Task 8: `ApiEmbedder` (OpenAI-compatible blocking client, mock-server
+> tested) and `UsearchIndex` (cosine HNSW with a UUID⇆u64 keymap sidecar).
+> Edge cases surfaced and handled: (1) `rusqlite` pinned to 0.32 — 0.40 needs
+> a nightly macro; (2) chunk-ordering divergence between the two stores,
+> unified to `sequence_index`; (3) usearch's `u64` keys bridged to 128-bit
+> `ChunkId`s; (4) reqwest `json` feature left off, manual `serde_json`
+> (de)serialization instead. Next: **Task 7 (chunker)**, then **Task 9**
+> wires ingest→chunk→embed→index→query end to end.
 
 ---
 

@@ -78,7 +78,10 @@ impl DocumentStore for InMemoryDocumentStore {
 
     fn get_chunks_by_document(&self, id: DocumentId) -> Result<Vec<Chunk>> {
         let state = self.state()?;
-        Ok(state.chunks_by_doc.get(&id).cloned().unwrap_or_default())
+        let mut chunks = state.chunks_by_doc.get(&id).cloned().unwrap_or_default();
+        // Contract: ordered by sequence_index (matches the SQLite backend).
+        chunks.sort_by_key(|c| c.sequence_index);
+        Ok(chunks)
     }
 
     fn get_chunks_by_ids(&self, ids: &[ChunkId]) -> Result<Vec<Chunk>> {
