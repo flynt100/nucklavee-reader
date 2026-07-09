@@ -111,15 +111,23 @@ Primary goal: make ingestion/search functional end-to-end over stored chunks.
      and `ContextAssembler` scaffold structs removed (behavior lives on
      `Library`).
 
-## Phase 5 — CLI Command Wiring and Operator UX
+## Phase 5 — CLI Command Wiring and Operator UX (audit Task 10) — DONE
 
 Primary goal: expose library capabilities via stable CLI workflows.
 
-1. [ ] Replace scaffold CLI with subcommands (`ingest`, `query`, `emit`, `context-window`).
-2. [ ] Add source format flags/input mode handling (file/url/raw text).
-3. [ ] Add output format controls and machine-readable output option for automation.
-4. [ ] Add CLI-level error mapping and actionable diagnostics.
-5. [ ] Add smoke tests for core CLI flows.
+1. [x] Replace scaffold CLI with the spec §8 command set: `ingest`, `search`,
+   `emit`, `list`, `info`, `context`, `remove`.
+2. [x] Source/input handling: file (`.md`/`.html`/`.htm`) and `http(s)://` URL,
+   auto-detected.
+3. [x] Output format controls (`emit <id> <format>`) + `--json` machine output.
+4. [x] Config file (`--config`, default `~/.config/forge/config.toml`) for the
+   SQLite database, vector index, and embedding endpoint; actionable errors.
+5. [x] Smoke tests for every subcommand against a temp SQLite db + a loopback
+   mock embedding server (`tests/cli.rs`).
+
+The Phase-2 CLI boundary was retired: `phase2_contract` renamed to `contract`
+(dead constants pruned), `cli_smoke_contract.rs`/`phase2_contract.rs` tests
+removed, `docs/cli-phase2-boundary.md` replaced by `docs/cli.md`.
 
 ## Phase 6 — PDF Pipeline (Iterative Heuristics)
 
@@ -159,10 +167,11 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
   retrieval, and the end-to-end `ingest → chunk → embed → index` pipeline with
   `query` + `context_window`. Nucklavee now performs semantic search end to
   end at the library level.
-- **Exact next focus:** **Task 10 — CLI rework** to the spec §8 command set
-  (`ingest`/`search`/`emit`/`list`/`info`/`context`/`remove`, config file,
-  machine-readable output), retiring the Phase-2 CLI boundary
-  (`phase2_contract`, `cli_smoke_contract`, `cli-phase2-boundary.md`).
+- **Phases 1–5 are complete.** The library and CLI perform ingest (md/html/
+  url) → convert (md/html/text) → chunk → embed → index → semantic search →
+  context assembly, end to end, over persistent SQLite + usearch storage.
+- **Exact next focus:** **Phase 6 — the PDF pipeline (audit Tasks 11–12)**,
+  pending a comprehensive last-pass review before greenlighting.
 - **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).

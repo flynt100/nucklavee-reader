@@ -1,24 +1,28 @@
+//! Nucklavee CLI (spec §8): ingest / search / emit / list / info / context /
+//! remove over a persistent SQLite + usearch library configured by a TOML
+//! file. Pass `--json` for machine-readable output.
+
+mod config;
+
 use std::process::ExitCode;
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use serde::Serialize;
+
+use config::Config;
+use nucklavee::embedder::api::ApiEmbedder;
 use nucklavee::ir::{DocumentId, Source};
-use nucklavee::phase2_contract;
-use nucklavee::storage::memory::InMemoryDocumentStore;
-use nucklavee::test_support::{NoopEmbedder, NoopVectorIndex};
-use nucklavee::{Format, IngestOptions, Library, Result};
+use nucklavee::storage::DocumentStore;
+use nucklavee::storage::sqlite::SqliteDocumentStore;
+use nucklavee::vector::VectorIndex;
+use nucklavee::vector::usearch::UsearchIndex;
+use nucklavee::{Error, Format, IngestOptions, Library, Result, contract};
+
+type Lib = Library<SqliteDocumentStore, UsearchIndex, ApiEmbedder>;
 
 fn main() -> ExitCode {
-    let mut lib = Library::new(
-        InMemoryDocumentStore::default(),
-        NoopVectorIndex,
-        NoopEmbedder,
-    )
-    .expect("build library");
-
-    let cli = Cli::parse();
-    let result = run_phase2_service(&mut lib, cli.command);
-
-    match result {
+    match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: {err}");
@@ -27,137 +31,230 @@ fn main() -> ExitCode {
     }
 }
 
-#[derive(Debug, Parser)]
-#[command(name = "nucklavee")]
-#[command(
-    about = "nucklavee CLI (markdown/html ingest, markdown emit)",
-    long_about = "Ingest markdown (.md) or html (.html/.htm) files and emit canonical markdown via `ingest-emit`. The CLI uses an in-memory document store, and document IDs are process-local and valid only in the process that created them. Standalone `emit --id` is disabled."
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
+fn run() -> Result<()> {
+    let cli = Cli::parse();
+    let cfg = Config::load(cli.config.as_deref())?;
+    let mut lib = build_library(&cfg)?;
+    let json = cli.json;
 
-#[derive(Debug, Subcommand)]
-enum Commands {
-    #[command(
-        about = "Ingest a markdown or html file and print its in-memory document ID (same process only)"
-    )]
-    Ingest {
-        #[arg(help = "Path to a local .md/.html file, or an http(s):// URL")]
-        path: String,
-        #[arg(long, help = "Normalize bare callouts like `[!tip]` into blockquotes")]
-        normalize_bare_callouts: bool,
-    },
-    #[command(
-        hide = true,
-        about = "Legacy command: emit by in-memory document ID (disabled)"
-    )]
-    Emit {
-        #[arg(long)]
-        id: DocumentId,
-        #[arg(long, value_parser = parse_format)]
-        format: Format,
-    },
-    #[command(about = "Ingest and immediately emit in one process (recommended)")]
-    IngestEmit {
-        #[arg(help = "Path to a local .md/.html file, or an http(s):// URL")]
-        path: String,
-        #[arg(long, value_parser = parse_format, default_value = "markdown")]
-        format: Format,
-        #[arg(long, help = "Normalize bare callouts like `[!tip]` into blockquotes")]
-        normalize_bare_callouts: bool,
-    },
-    Query,
-    ContextWindow,
-    Html,
-    Pdf,
-}
-
-fn run_phase2_service(
-    lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
-    command: Commands,
-) -> Result<()> {
-    match command {
-        Commands::Ingest {
+    match cli.command {
+        Command::Ingest {
             path,
             normalize_bare_callouts,
-        } => run_ingest(lib, &path, normalize_bare_callouts),
-        Commands::Emit { id: _, format: _ } => Err(phase2_contract::invalid_input(
-            phase2_contract::EMIT_BY_ID_DISABLED,
-        )),
-        Commands::IngestEmit {
-            path,
-            format,
-            normalize_bare_callouts,
-        } => run_ingest_emit(lib, &path, format, normalize_bare_callouts),
-        Commands::Query => Err(phase2_contract::not_implemented(
-            phase2_contract::QUERY_NOT_IMPLEMENTED,
-        )),
-        Commands::ContextWindow => Err(phase2_contract::not_implemented(
-            phase2_contract::CONTEXT_WINDOW_NOT_IMPLEMENTED,
-        )),
-        Commands::Html => Err(phase2_contract::not_implemented(
-            phase2_contract::HTML_PIPELINE_NOT_IMPLEMENTED,
-        )),
-        Commands::Pdf => Err(phase2_contract::not_implemented(
-            phase2_contract::PDF_PIPELINE_NOT_IMPLEMENTED,
-        )),
+        } => cmd_ingest(&mut lib, &cfg, &path, normalize_bare_callouts, json),
+        Command::Search { query, limit } => cmd_search(&lib, &query, limit, json),
+        Command::Emit { id, format } => cmd_emit(&lib, id, format),
+        Command::List => cmd_list(&lib, json),
+        Command::Info { id } => cmd_info(&lib, id, json),
+        Command::Context { query, budget } => cmd_context(&lib, &query, budget),
+        Command::Remove { id } => cmd_remove(&mut lib, &cfg, id),
     }
 }
 
-fn run_ingest(
-    lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
-    path: &str,
-    normalize_bare_callouts: bool,
-) -> Result<()> {
-    let id = ingest_doc_id(lib, path, normalize_bare_callouts)?;
-    println!("{id}");
-    Ok(())
+fn build_library(cfg: &Config) -> Result<Lib> {
+    let store = SqliteDocumentStore::open(&cfg.storage.database)?;
+    let mut index = UsearchIndex::new(cfg.embedding.dimension)?;
+    if cfg.storage.vector_index.exists() {
+        index.load(&cfg.storage.vector_index)?;
+    }
+    let embedder = ApiEmbedder::new(cfg.embedder_config())?;
+    Library::new(store, index, embedder)
 }
 
-fn run_ingest_emit(
-    lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
-    path: &str,
-    format: Format,
-    normalize_bare_callouts: bool,
-) -> Result<()> {
-    let id = ingest_doc_id(lib, path, normalize_bare_callouts)?;
-    let output = lib.emit(id, format)?;
-    println!("{output}");
-    Ok(())
+#[derive(Debug, Parser)]
+#[command(name = "nucklavee")]
+#[command(about = "Universal document ingestion, conversion, and semantic search")]
+struct Cli {
+    /// Path to config TOML (default: ~/.config/forge/config.toml).
+    #[arg(long, global = true)]
+    config: Option<PathBuf>,
+    /// Emit machine-readable JSON where applicable.
+    #[arg(long, global = true)]
+    json: bool,
+    #[command(subcommand)]
+    command: Command,
 }
 
-fn ingest_doc_id(
-    lib: &mut Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder>,
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Ingest a local file (.md/.html/.htm) or an http(s):// URL.
+    Ingest {
+        path: String,
+        /// Normalize bare callouts like `[!tip]` into blockquotes (markdown).
+        #[arg(long)]
+        normalize_bare_callouts: bool,
+    },
+    /// Semantic search; print ranked chunks with provenance.
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
+    /// Emit a stored document as markdown | html | text.
+    Emit {
+        id: DocumentId,
+        #[arg(value_parser = parse_format_arg)]
+        format: Format,
+    },
+    /// List all ingested documents with IDs and titles.
+    List,
+    /// Show a document's metadata and chunk count.
+    Info { id: DocumentId },
+    /// Assemble and print a context window for a query.
+    Context {
+        query: String,
+        #[arg(long, default_value_t = 2048)]
+        budget: usize,
+    },
+    /// Remove a document and its chunks from the library.
+    Remove { id: DocumentId },
+}
+
+// --- command handlers -------------------------------------------------------
+
+fn cmd_ingest(
+    lib: &mut Lib,
+    cfg: &Config,
     path: &str,
     normalize_bare_callouts: bool,
-) -> Result<DocumentId> {
+    json: bool,
+) -> Result<()> {
     let source = if is_url(path) {
         Source::Url(path.to_string())
     } else {
         Source::File(path.into())
     };
-    lib.ingest_with_options(
+    let id = lib.ingest_with_options(
         source,
         IngestOptions {
             normalize_bare_callouts,
             ..Default::default()
         },
-    )
+    )?;
+    lib.save_index(&cfg.storage.vector_index)?;
+
+    if json {
+        print_json(&serde_json::json!({ "document_id": id.to_string() }))?;
+    } else {
+        println!("{id}");
+    }
+    Ok(())
 }
+
+fn cmd_search(lib: &Lib, query: &str, limit: usize, json: bool) -> Result<()> {
+    let chunks = lib.query(query, limit)?;
+    if json {
+        print_json(&chunks)?;
+        return Ok(());
+    }
+    if chunks.is_empty() {
+        println!("(no results)");
+    }
+    for chunk in &chunks {
+        let path = if chunk.section_path.is_empty() {
+            "(root)".to_string()
+        } else {
+            chunk.section_path.join(" > ")
+        };
+        println!("[{path}] {}", snippet(&chunk.content));
+    }
+    Ok(())
+}
+
+fn cmd_emit(lib: &Lib, id: DocumentId, format: Format) -> Result<()> {
+    let output = lib.emit(id, format)?;
+    println!("{output}");
+    Ok(())
+}
+
+fn cmd_list(lib: &Lib, json: bool) -> Result<()> {
+    let docs = lib.store().list_documents()?;
+    if json {
+        print_json(&docs)?;
+        return Ok(());
+    }
+    if docs.is_empty() {
+        println!("(no documents)");
+    }
+    for meta in &docs {
+        println!("{}\t{}", meta.id, meta.title.as_deref().unwrap_or("(untitled)"));
+    }
+    Ok(())
+}
+
+fn cmd_info(lib: &Lib, id: DocumentId, json: bool) -> Result<()> {
+    let doc = lib.get_document(id)?;
+    let chunk_count = lib.store().get_chunks_by_document(id)?.len();
+
+    if json {
+        print_json(&serde_json::json!({
+            "id": doc.meta.id.to_string(),
+            "title": doc.meta.title,
+            "source": doc.meta.source.raw_source,
+            "format": format!("{:?}", doc.meta.format),
+            "ingested_at": doc.meta.ingested_at.to_rfc3339(),
+            "content_hash": doc.meta.content_hash,
+            "chunk_count": chunk_count,
+        }))?;
+        return Ok(());
+    }
+    println!("id:          {}", doc.meta.id);
+    println!(
+        "title:       {}",
+        doc.meta.title.as_deref().unwrap_or("(untitled)")
+    );
+    println!("source:      {}", doc.meta.source.raw_source);
+    println!("format:      {:?}", doc.meta.format);
+    println!("ingested_at: {}", doc.meta.ingested_at.to_rfc3339());
+    println!("chunks:      {chunk_count}");
+    Ok(())
+}
+
+fn cmd_context(lib: &Lib, query: &str, budget: usize) -> Result<()> {
+    let ctx = lib.context_window(query, budget)?;
+    print!("{ctx}");
+    if !ctx.ends_with('\n') {
+        println!();
+    }
+    Ok(())
+}
+
+fn cmd_remove(lib: &mut Lib, cfg: &Config, id: DocumentId) -> Result<()> {
+    lib.remove_document(id)?;
+    lib.save_index(&cfg.storage.vector_index)?;
+    println!("removed {id}");
+    Ok(())
+}
+
+// --- helpers ----------------------------------------------------------------
 
 fn is_url(arg: &str) -> bool {
     arg.starts_with("http://") || arg.starts_with("https://")
 }
 
-fn parse_format(raw: &str) -> Result<Format> {
+fn parse_format_arg(raw: &str) -> std::result::Result<Format, String> {
     match raw {
         "markdown" => Ok(Format::Markdown),
         "html" => Ok(Format::Html),
         "text" => Ok(Format::PlainText),
-        _ => Err(phase2_contract::invalid_input(
-            phase2_contract::unsupported_format_message(raw),
-        )),
+        _ => Err(contract::unsupported_format_message(raw)),
     }
+}
+
+fn snippet(content: &str) -> String {
+    let one_line = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    const MAX: usize = 160;
+    if one_line.chars().count() > MAX {
+        let truncated: String = one_line.chars().take(MAX).collect();
+        format!("{truncated}…")
+    } else {
+        one_line
+    }
+}
+
+fn print_json<T: Serialize>(value: &T) -> Result<()> {
+    let s = serde_json::to_string_pretty(value)
+        .map_err(|e| Error::InvalidInput(format!("json serialization failed: {e}")))?;
+    println!("{s}");
+    Ok(())
 }

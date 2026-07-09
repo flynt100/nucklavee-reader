@@ -196,11 +196,15 @@ treat `byte_range` as optional (it already is in the type).
   sandbox whose egress goes through an intercepting HTTPS proxy with a custom
   CA, live `https://` fetches may need that CA trusted by the process; the
   loopback tests avoid this by using plain HTTP with `use_env_proxy: false`.
-- Phase-boundary behavior (which formats/commands are enabled) is governed by
-  `src/phase2_contract.rs` + `docs/cli-phase2-boundary.md`, updated per phase.
+- Canonical error strings and helpers live in `src/contract.rs` (formerly
+  `phase2_contract`; renamed and pruned in Task 10).
 
 ## CLI (spec §8)
 
-The spec's command set (`ingest`/`search`/`emit`/`list`/`info`/`context`/`remove`)
-is the Phase-5 target. Until then the CLI is the narrow Phase-2 boundary
-documented in `docs/cli-phase2-boundary.md`.
+The full command set is implemented (Task 10):
+`ingest`/`search`/`emit`/`list`/`info`/`context`/`remove`, configured by a
+TOML file (`--config`, default `~/.config/forge/config.toml`) that names the
+SQLite database, usearch index, and embedding endpoint. `--json` gives
+machine-readable output. The vector index is persisted to its file after
+`ingest`/`remove` (its UUID⇆u64 keymap sidecar travels with it). See
+`docs/cli.md`.

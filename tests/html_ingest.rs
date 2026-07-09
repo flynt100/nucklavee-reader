@@ -456,7 +456,7 @@ fn library_rejects_unsupported_extension_with_contract_message() {
         err.to_string(),
         format!(
             "invalid input: {}",
-            nucklavee::phase2_contract::unsupported_extension_message("docx")
+            nucklavee::contract::unsupported_extension_message("docx")
         )
     );
 }

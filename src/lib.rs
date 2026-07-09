@@ -6,7 +6,7 @@ pub mod emitters;
 pub mod ir;
 pub mod net;
 pub mod parsers;
-pub mod phase2_contract;
+pub mod contract;
 pub mod storage;
 pub mod test_support;
 pub mod vector;
@@ -106,13 +106,13 @@ where
                         path.display().to_string(),
                     ),
                     "pdf" => {
-                        return Err(phase2_contract::not_implemented(
-                            phase2_contract::PDF_PIPELINE_NOT_IMPLEMENTED,
+                        return Err(contract::not_implemented(
+                            contract::PDF_PIPELINE_NOT_IMPLEMENTED,
                         ));
                     }
                     other => {
                         return Err(Error::InvalidInput(
-                            phase2_contract::unsupported_extension_message(other),
+                            contract::unsupported_extension_message(other),
                         ));
                     }
                 }
@@ -269,6 +269,27 @@ where
             used += cost;
         }
         Ok(out)
+    }
+
+    /// Remove a document and its chunks from both the store and the vector
+    /// index. Idempotent.
+    pub fn remove_document(&mut self, id: DocumentId) -> Result<()> {
+        let chunks = self.store.get_chunks_by_document(id)?;
+        for chunk in &chunks {
+            self.index.remove(chunk.id)?;
+        }
+        self.store.remove_document(id)?;
+        Ok(())
+    }
+
+    /// Persist the vector index to `path` (the document store persists itself).
+    pub fn save_index(&self, path: &std::path::Path) -> Result<()> {
+        self.index.save(path)
+    }
+
+    /// Load the vector index from `path`, replacing the in-memory index.
+    pub fn load_index(&mut self, path: &std::path::Path) -> Result<()> {
+        self.index.load(path)
     }
 
     pub fn store(&self) -> &S {

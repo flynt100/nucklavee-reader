@@ -71,8 +71,20 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > structs, the unused `Emitter` trait + `*Emitter` structs, the unused
 > `MarkdownParser`/`HtmlParser`/`PdfParser` scaffold structs, the unused
 > `structurally_equivalent`, `ByteRange::{len,is_empty}`, `Library::{index,
-> embedder}` accessors, and `ApiEmbedder::config`. Next: **Task 10 (CLI
-> rework)** to the spec §8 command set.
+> embedder}` accessors, and `ApiEmbedder::config`.
+>
+> **Task 10 (CLI rework) is complete** — Phase 5 done. The scaffold CLI was
+> replaced with the spec §8 command set (`ingest`/`search`/`emit`/`list`/
+> `info`/`context`/`remove`), a TOML config (`--config`, default
+> `~/.config/forge/config.toml`) naming the SQLite db, usearch index, and
+> embedding endpoint, and `--json` output. New `Library` methods:
+> `remove_document`, `save_index`, `load_index`. The Phase-2 boundary was
+> retired: `phase2_contract` → `contract` (dead constants pruned),
+> `cli_smoke_contract.rs`/`phase2_contract.rs` deleted (library assertions
+> moved to `tests/library_ingest.rs`), `docs/cli-phase2-boundary.md` →
+> `docs/cli.md`. Every subcommand is smoke-tested against a temp SQLite db +
+> loopback mock embedder (`tests/cli.rs`). Next: **comprehensive last-pass
+> review, then Phase 6 (PDF, Tasks 11–12)**.
 
 ---
 
