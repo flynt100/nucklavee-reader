@@ -8,12 +8,6 @@
 use super::normalize::normalize_document;
 use super::types::{Block, BlockNode, Document, Inline, ListItem};
 
-/// Return true if the two documents are structurally equivalent after
-/// normalization.
-pub fn structurally_equivalent(a: &Document, b: &Document) -> bool {
-    structural_diff(a, b).is_none()
-}
-
 /// Body-only structural diff for cross-format comparisons: ignores metadata
 /// (title, format, frontmatter) entirely and compares normalized block trees.
 /// Use this when the two documents legitimately differ in source format

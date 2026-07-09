@@ -59,9 +59,20 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > tiktoken cl100k_base), with the §11.2 acceptance suite. The pre-Task-7
 > normalization decision was made — **normalize-at-ingest** (canonical stored
 > IR): `Library::ingest` now runs `normalize_document` before storing, so the
-> chunker gets consistent input across Markdown and HTML. Next: **Task 9**
-> wires ingest→chunk→embed→index and implements `query`/`context_window` end
-> to end.
+> chunker gets consistent input across Markdown and HTML.
+>
+> **Task 9 (pipeline + query + context_window) is complete** — Phase 4 is
+> done. `Library::ingest` grew the chunk→embed→index tail; `query` and
+> `context_window` are implemented (spec §7.3), with an end-to-end
+> `tests/pipeline.rs` using a real usearch index + deterministic
+> `HashEmbedder`. Edge case handled: the context header de-duplicates the
+> title against the H1 already in the section path. A **repo-wide prune pass**
+> then removed dead surface: the `IngestionPipeline`/`ContextAssembler`
+> structs, the unused `Emitter` trait + `*Emitter` structs, the unused
+> `MarkdownParser`/`HtmlParser`/`PdfParser` scaffold structs, the unused
+> `structurally_equivalent`, `ByteRange::{len,is_empty}`, `Library::{index,
+> embedder}` accessors, and `ApiEmbedder::config`. Next: **Task 10 (CLI
+> rework)** to the spec §8 command set.
 
 ---
 

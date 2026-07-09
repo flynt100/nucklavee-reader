@@ -102,11 +102,15 @@ Frozen in the 2026-07-06 trait-surface push (Task 1 of the audit plan):
 
 ## Parsers / emitters (spec §4–5)
 
-- There is **no `Parser` trait**. Each format exposes free functions and/or an
-  inherent-method struct (`parsers::markdown::parse_markdown(input, ParseOptions)`,
-  `parsers::html::parse_html(input, HtmlParseOptions)`) because parse options
-  are format-specific. Re-introduce a trait only when a cross-format
-  abstraction is actually needed.
+- There is **no `Parser` trait and no `Emitter` trait**. Each format exposes a
+  free function: `parsers::markdown::parse_markdown(input, ParseOptions)`,
+  `parsers::html::parse_html(input, HtmlParseOptions)`,
+  `emitters::{markdown::emit_markdown, html::emit_html, text::emit_text}`.
+  Parse options are format-specific and the `Library` dispatches emission on
+  the `Format` enum, so neither trait earned its keep. (The unused
+  `MarkdownParser`/`HtmlParser` and `*Emitter` scaffold structs were removed
+  in the Task 9 prune pass.) Re-introduce a trait only when a real
+  cross-format abstraction is needed.
 - Shared parser helpers live in `parsers/mod.rs`: `sha256_hex`,
   `inlines_to_plain`, `GENERIC_BLOCK_DEFAULT_CONFIDENCE`, and
   `SectionPathTracker` (the heading→section-path algorithm used by both
@@ -158,13 +162,30 @@ treat `byte_range` as optional (it already is in the type).
 - Cross-format comparisons use `ir::structural_diff_bodies` (body-only diff
   that ignores `meta.format`/`title`/`frontmatter`).
 
-## Library / ingest (spec §2, §7.4)
+## Library / ingest + retrieval (spec §2, §7.3, §7.4)
 
 - `Library<S, V, E>` is generic over store/index/embedder traits, not concrete
-  types.
-- `ingest` computes `content_hash` (SHA-256 of the raw input) and returns the
-  existing `DocumentId` when the hash is already present in the store
-  (spec §7.4 dedupe) instead of re-ingesting.
+  types, and owns a concrete `StructuralChunker` (so `Library::new` is
+  fallible — it loads the tokenizer).
+- `ingest` runs the full pipeline: parse → validate → `normalize_document` →
+  dedupe → `upsert_document` → chunk → `insert_chunks` → embed chunk contents
+  → `index.add(chunk_id, vector)`. It computes `content_hash` (SHA-256 of the
+  raw input) and returns the existing `DocumentId` on a hash hit
+  (spec §7.4 dedupe) *before* chunking, so duplicates are never re-indexed.
+- `query(text, limit)` embeds the query, `index.search`es, and joins the hit
+  chunk IDs back through `store.get_chunks_by_ids` (rank order preserved).
+- `context_window(query, budget)` retrieves up to `CONTEXT_SEARCH_K` (50)
+  chunks and greedily packs them in rank order, each prefixed with a
+  `[Source: {title} > {section}]` header, until the next chunk would exceed
+  the budget. Header + content tokens are counted with the chunker's
+  tokenizer. **Edge case:** the section path's first element is usually the
+  H1, which is also the document title, so the title is dropped from the path
+  when they match — the header reads `[Source: Title > Section]`, not
+  `[Source: Title > Title > Section]`.
+- Embedder and vector-index **dimensions must match**; the `Library` does not
+  enforce this at construction, so a caller wiring a real `ApiEmbedder` to a
+  `UsearchIndex` must build the index with `embedder.dimension()` (otherwise
+  `index.add` errors on the first chunk).
 - `Source::Url` ingest goes through `src/net` (blocking `reqwest`): fetch,
   follow redirects, then choose the parser by `Content-Type`
   (markdown/html/xml), falling back to the URL path extension and then a

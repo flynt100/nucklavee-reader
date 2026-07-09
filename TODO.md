@@ -101,8 +101,15 @@ Primary goal: make ingestion/search functional end-to-end over stored chunks.
    - `UsearchIndex` (cosine HNSW) with a UUID⇆u64 keymap + JSON sidecar for
      `save`/`load`; add/search/remove/persistence tests in
      `tests/vector_usearch.rs`.
-5. [ ] Wire pipeline: ingest -> parse -> validate/canonicalize -> store -> chunk -> embed -> index. *(audit Task 9)*
-6. [ ] Implement ranked semantic query returning chunks with provenance. *(audit Task 9)*
+5. [x] Wire pipeline: ingest -> parse -> validate/canonicalize -> store -> chunk -> embed -> index (audit Task 9).
+6. [x] Implement ranked semantic query returning chunks with provenance (audit Task 9).
+   - `Library::query` (embed → index search → store join) and
+     `context_window` (spec §7.3 greedy packing with `[Source: title >
+     section]` headers, header tokens counted, title de-duplicated against the
+     H1 in the section path). End-to-end `tests/pipeline.rs` with a real
+     usearch index + deterministic `HashEmbedder`. Dead `IngestionPipeline`
+     and `ContextAssembler` scaffold structs removed (behavior lives on
+     `Library`).
 
 ## Phase 5 — CLI Command Wiring and Operator UX
 
@@ -148,12 +155,14 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
 - **Phase 2B state:** complete (gate command green).
 - **Phase 3 state:** **complete** (audit Tasks 2, 3 & 4 done — HTML
   parse/emit, both cross-format gates, and URL ingestion).
-- **Exact next focus:** **Task 9 — the pipeline that wires
-  ingest→chunk→embed→index and implements `query` + `context_window`.** All
-  of its building blocks now exist and are individually tested: stores (Task
-  6), plaintext rendering (Task 5), chunker (Task 7), embedder + vector index
-  (Task 8). Task 9 is the point Nucklavee first performs semantic search end
-  to end. Stored IR is canonicalized at ingest (decision: normalize-at-ingest).
+- **Phase 4 is complete** (Tasks 5–9): storage, chunking, embeddings, vector
+  retrieval, and the end-to-end `ingest → chunk → embed → index` pipeline with
+  `query` + `context_window`. Nucklavee now performs semantic search end to
+  end at the library level.
+- **Exact next focus:** **Task 10 — CLI rework** to the spec §8 command set
+  (`ingest`/`search`/`emit`/`list`/`info`/`context`/`remove`, config file,
+  machine-readable output), retiring the Phase-2 CLI boundary
+  (`phase2_contract`, `cli_smoke_contract`, `cli-phase2-boundary.md`).
 - **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).

@@ -12,7 +12,8 @@ fn main() -> ExitCode {
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
         NoopEmbedder,
-    );
+    )
+    .expect("build library");
 
     let cli = Cli::parse();
     let result = run_phase2_service(&mut lib, cli.command);
@@ -141,6 +142,7 @@ fn ingest_doc_id(
         source,
         IngestOptions {
             normalize_bare_callouts,
+            ..Default::default()
         },
     )
 }

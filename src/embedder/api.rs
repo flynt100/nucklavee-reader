@@ -67,10 +67,6 @@ impl ApiEmbedder {
             .map_err(|e| Error::Embedding(format!("failed to build HTTP client: {e}")))?;
         Ok(Self { config, client })
     }
-
-    pub fn config(&self) -> &ApiEmbedderConfig {
-        &self.config
-    }
 }
 
 #[derive(Deserialize)]

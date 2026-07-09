@@ -47,6 +47,12 @@ impl StructuralChunker {
         self.bpe.encode_with_special_tokens(text).len()
     }
 
+    /// Public token count using the same cl100k_base tokenizer the chunker
+    /// uses (so `context_window` budgets match chunk budgets).
+    pub fn count_tokens(&self, text: &str) -> usize {
+        self.count(text)
+    }
+
     /// Split `text` into pieces each within `budget` tokens by decoding fixed
     /// token windows. Exact last-resort fallback (may cut mid-word).
     fn token_window_split(&self, text: &str, budget: usize) -> Vec<String> {

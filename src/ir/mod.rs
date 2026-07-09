@@ -13,7 +13,7 @@ pub mod types;
 pub mod validate;
 
 pub use diagnostic::{Diagnostic, DiagnosticKind};
-pub use equiv::{structural_diff, structural_diff_bodies, structurally_equivalent};
+pub use equiv::{structural_diff, structural_diff_bodies};
 pub use normalize::normalize_document;
 pub use provenance::{ByteRange, Provenance};
 pub use types::{

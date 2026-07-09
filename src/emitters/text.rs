@@ -14,18 +14,7 @@
 //!
 //! Blocks are separated by a single blank line.
 
-use crate::Result;
-use crate::emitters::Emitter;
 use crate::ir::{Block, BlockNode, Document, Inline, ListItem};
-
-#[derive(Debug, Default, Clone)]
-pub struct PlainTextEmitter;
-
-impl Emitter for PlainTextEmitter {
-    fn emit(&self, document: &Document) -> Result<String> {
-        Ok(emit_text(document))
-    }
-}
 
 /// Emit a document's body as plain text.
 pub fn emit_text(document: &Document) -> String {

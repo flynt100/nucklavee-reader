@@ -12,7 +12,8 @@ fn reingesting_identical_content_returns_existing_document_id() {
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
         NoopEmbedder,
-    );
+    )
+    .expect("build library");
 
     let first = lib
         .ingest(Source::RawMarkdown("# Title\n\nbody\n".into()))
@@ -35,7 +36,8 @@ fn differing_content_gets_distinct_document_ids() {
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
         NoopEmbedder,
-    );
+    )
+    .expect("build library");
 
     let a = lib
         .ingest(Source::RawMarkdown("# A\n".into()))

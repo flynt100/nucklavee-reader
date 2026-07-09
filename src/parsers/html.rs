@@ -34,17 +34,6 @@ use crate::parsers::{
     GENERIC_BLOCK_DEFAULT_CONFIDENCE, SectionPathTracker, inlines_to_plain, sha256_hex,
 };
 
-/// Phase-3 HTML parser.
-#[derive(Debug, Default)]
-pub struct HtmlParser;
-
-impl HtmlParser {
-    /// Convenience wrapper over [`parse_html`] with default options.
-    pub fn parse(&self, input: &str) -> Document {
-        parse_html(input, HtmlParseOptions::default())
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct HtmlParseOptions {
     /// Optional human-readable source descriptor (path, url, etc.) to attach

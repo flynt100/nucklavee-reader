@@ -62,20 +62,24 @@ In short: **normalize anything, preserve structure, and make it searchable.**
   chunks, prose accumulates, and oversized content is split within a token
   budget (tiktoken cl100k_base). Stored IR is canonicalized at ingest so
   chunking is consistent across source formats.
-- **Embeddings + vector search primitives**: an `ApiEmbedder` (OpenAI-compatible
+- **End-to-end semantic search** (Task 9): `ingest` runs the full pipeline —
+  parse → validate → canonicalize → store → chunk → embed → index —, `query`
+  embeds a question and returns the nearest chunks ranked with provenance, and
+  `context_window` packs ranked chunks into a token-budgeted string with
+  `[Source: title > section]` headers for LLM consumption (spec §7.3).
+- **Embeddings + vector search backends**: an `ApiEmbedder` (OpenAI-compatible
   `/v1/embeddings`, blocking) and a `UsearchIndex` (cosine HNSW via `usearch`)
-  with add/search/remove and file persistence. Not yet wired into an
-  end-to-end `query` — that is Task 9.
+  with add/search/remove and file persistence.
 - **CLI**: `ingest` / `ingest-emit` over `.md`, `.html`, `.htm` files or
   `http(s)://` URLs, emitting `markdown` or `html`, with locked boundary
   errors for everything else.
 
 ## What Is Not Implemented Yet
 
-- The end-to-end query/context-window pipeline that wires ingest → chunk →
-  embed → index → search (Task 9). Every building block (store, chunker,
-  embedder, vector index) exists and is tested; they are not yet connected
-  into `query`/`context_window`, which still return "not implemented" errors.
+- The full spec §8 CLI command set (`search`, `list`, `info`, `context`,
+  `remove`, config file) — Task 10. The library performs semantic search end
+  to end today, but the CLI still only exposes `ingest`/`ingest-emit`.
+- PDF ingestion (Tasks 11–12).
 - Full CLI command set (`search`, `list`, `info`, `context`, `remove` — Task 10)
 - PDF pipeline (Tasks 11–12)
 
@@ -95,8 +99,8 @@ Per-task scopes, guardrails, and acceptance criteria live in
 6. ~~Task 5 — PlainText emitter~~ ✅
 7. ~~Task 6 — SQLite store~~ ✅ · ~~Task 8 — embedder + vector index~~ ✅
 8. ~~Task 7 — structure-aware chunker~~ ✅
-9. Task 9 — pipeline wiring + `query` + `context_window` (**next**)
-10. Task 10 — CLI rework
+9. ~~Task 9 — pipeline wiring + `query` + `context_window`~~ ✅ **(Phase 4 complete)**
+10. Task 10 — CLI rework (**next**)
 11. Tasks 11–12 — PDF pipeline
 
 ## Development
