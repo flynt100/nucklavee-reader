@@ -40,16 +40,20 @@ In short: **normalize anything, preserve structure, and make it searchable.**
 - **Provenance in original-source coordinates**: block byte ranges survive
   the parser's internal input rewrites (markdown); HTML blocks carry heading
   `section_path` provenance.
+- **URL ingestion** (Phase 3, Task 4): fetch an `http(s)://` page (blocking
+  `reqwest`, redirects followed), auto-detect HTML vs Markdown from the
+  `Content-Type` header (with URL-extension and body fallbacks), and record
+  the final URL as provenance. Network failures surface as typed errors.
 - **Content-hash deduplication** on ingest (spec §7.4): identical content
   returns the existing document ID.
 - **In-memory document store** implementing the full frozen `DocumentStore`
   contract (hash lookup, listing, removal, chunk retrieval).
-- **CLI**: `ingest` / `ingest-emit` over `.md`, `.html`, `.htm` files with
-  locked boundary errors for everything else.
+- **CLI**: `ingest` / `ingest-emit` over `.md`, `.html`, `.htm` files or
+  `http(s)://` URLs, emitting `markdown` or `html`, with locked boundary
+  errors for everything else.
 
 ## What Is Not Implemented Yet
 
-- URL ingestion (Task 4)
 - PlainText emitter (Task 5)
 - SQLite persistence (Task 6), chunking (Task 7), embeddings + vector index
   (Task 8), query/context-window pipeline (Task 9)
@@ -68,7 +72,7 @@ Per-task scopes, guardrails, and acceptance criteria live in
 2. ~~Task 0/1 — cleanup, trait freeze, dedupe, provenance remap~~ ✅
 3. ~~Task 2 — HTML parser (content extraction + DOM→IR)~~ ✅
 4. ~~Task 3 — HTML emitter + cross-format gates (both directions)~~ ✅
-5. Task 4 — URL ingestion (closes Phase 3)
+5. ~~Task 4 — URL ingestion~~ ✅ **(Phase 3 complete)**
 6. Tasks 5–9 — plaintext emitter, SQLite store, chunker, embedder + vector
    index, end-to-end query/context pipeline
 7. Task 10 — CLI rework
@@ -99,6 +103,9 @@ cargo run --bin nucklavee -- ingest-emit tests/fixtures/html/docs_site.html --fo
 
 # Either source → HTML
 cargo run --bin nucklavee -- ingest-emit tests/fixtures/06_headings.md --format html
+
+# Fetch a URL and emit it as markdown (HTML vs Markdown auto-detected)
+cargo run --bin nucklavee -- ingest-emit https://example.com/page --format markdown
 ```
 
 `--format` supports `markdown` and `html`.

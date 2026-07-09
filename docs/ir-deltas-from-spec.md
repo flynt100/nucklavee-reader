@@ -107,6 +107,16 @@ treat `byte_range` as optional (it already is in the type).
 - `ingest` computes `content_hash` (SHA-256 of the raw input) and returns the
   existing `DocumentId` when the hash is already present in the store
   (spec §7.4 dedupe) instead of re-ingesting.
+- `Source::Url` ingest goes through `src/net` (blocking `reqwest`): fetch,
+  follow redirects, then choose the parser by `Content-Type`
+  (markdown/html/xml), falling back to the URL path extension and then a
+  leading-`<` body sniff, defaulting to HTML. The post-redirect final URL is
+  stored as `DocumentMeta.source.raw_source`. Failures (build/connect/status/
+  body) surface as `Error::Network`.
+- **Proxy/TLS caveat:** `net::fetch` honors `HTTP(S)_PROXY`/`NO_PROXY`. In a
+  sandbox whose egress goes through an intercepting HTTPS proxy with a custom
+  CA, live `https://` fetches may need that CA trusted by the process; the
+  loopback tests avoid this by using plain HTTP with `use_env_proxy: false`.
 - Phase-boundary behavior (which formats/commands are enabled) is governed by
   `src/phase2_contract.rs` + `docs/cli-phase2-boundary.md`, updated per phase.
 

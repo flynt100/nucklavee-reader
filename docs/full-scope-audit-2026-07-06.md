@@ -30,8 +30,13 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > emitter) is complete**: `src/emitters/html.rs` (spec §5.2), wired to
 > `Format::Html` + CLI `--format html`, with markdown→IR→html→IR structural
 > gates (`tests/cross_format.rs`) closing the second cross-format direction.
-> Phase 3 is complete except URL ingestion (Task 4). Tasks 5/6/8 stay
-> parallelizable.
+>
+> **Task 4 (URL ingestion) is complete**, closing Phase 3: `src/net` adds a
+> blocking `reqwest` fetch (redirects, `Content-Type`→parser sniffing with
+> extension/body fallback, typed `Error::Network`), wired into
+> `Library::ingest(Source::Url)` and CLI `http(s)://` arguments, with hermetic
+> loopback-server tests (`tests/url_ingest.rs`). Next: the Phase-4 retrieval
+> track — Tasks 5/6/8 are parallelizable, feeding Task 7 then Task 9.
 
 ---
 

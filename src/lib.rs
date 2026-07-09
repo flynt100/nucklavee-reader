@@ -7,6 +7,7 @@ pub mod emitters;
 pub mod ir;
 pub mod parsers;
 pub mod phase2_contract;
+pub mod net;
 pub mod pipeline;
 pub mod storage;
 pub mod test_support;
@@ -103,10 +104,13 @@ where
             }
             Source::RawMarkdown(markdown) => (IngestInput::Markdown(markdown), "raw:markdown".to_string()),
             Source::RawHtml(html) => (IngestInput::Html(html), "raw:html".to_string()),
-            Source::Url(_) => {
-                return Err(Error::NotImplemented(
-                    "URL ingest is not implemented yet (Phase 3, Task 4); provide a local .md or .html file",
-                ));
+            Source::Url(url) => {
+                let fetched = net::fetch(&url)?;
+                let input = match fetched.kind {
+                    net::FetchedKind::Markdown => IngestInput::Markdown(fetched.body),
+                    net::FetchedKind::Html => IngestInput::Html(fetched.body),
+                };
+                (input, fetched.final_url)
             }
         };
 
@@ -223,6 +227,9 @@ pub enum Error {
 
     #[error("embedding error: {0}")]
     Embedding(String),
+
+    #[error("network error: {0}")]
+    Network(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

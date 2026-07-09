@@ -14,8 +14,11 @@ Persistence semantics are intentionally narrow:
 
 ### `ingest`
 
-- Purpose: ingest a local markdown or HTML file into the in-memory store.
-- Accepted extensions: `.md`, `.html`, `.htm`.
+- Purpose: ingest a local markdown/HTML file **or an `http(s)://` URL** into
+  the in-memory store.
+- Accepted file extensions: `.md`, `.html`, `.htm`. Arguments beginning with
+  `http://` or `https://` are fetched; HTML vs Markdown is auto-detected from
+  the response `Content-Type` (with URL-extension and body fallbacks).
 - Output: prints the in-memory document ID to stdout.
 - Important: ID is process-local and ephemeral.
 - Re-ingesting identical content returns the existing document ID

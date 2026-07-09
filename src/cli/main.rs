@@ -43,7 +43,7 @@ enum Commands {
         about = "Ingest a markdown or html file and print its in-memory document ID (same process only)"
     )]
     Ingest {
-        #[arg(help = "Path to a local .md or .html file")]
+        #[arg(help = "Path to a local .md/.html file, or an http(s):// URL")]
         path: String,
         #[arg(long, help = "Normalize bare callouts like `[!tip]` into blockquotes")]
         normalize_bare_callouts: bool,
@@ -60,7 +60,7 @@ enum Commands {
     },
     #[command(about = "Ingest and immediately emit in one process (recommended)")]
     IngestEmit {
-        #[arg(help = "Path to a local .md or .html file")]
+        #[arg(help = "Path to a local .md/.html file, or an http(s):// URL")]
         path: String,
         #[arg(long, value_parser = parse_format, default_value = "markdown")]
         format: Format,
@@ -132,12 +132,21 @@ fn ingest_doc_id(
     path: &str,
     normalize_bare_callouts: bool,
 ) -> Result<DocumentId> {
+    let source = if is_url(path) {
+        Source::Url(path.to_string())
+    } else {
+        Source::File(path.into())
+    };
     lib.ingest_with_options(
-        Source::File(path.into()),
+        source,
         IngestOptions {
             normalize_bare_callouts,
         },
     )
+}
+
+fn is_url(arg: &str) -> bool {
+    arg.starts_with("http://") || arg.starts_with("https://")
 }
 
 fn parse_format(raw: &str) -> Result<Format> {

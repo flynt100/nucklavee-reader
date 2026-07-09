@@ -61,7 +61,12 @@ Primary goal: robust content extraction from noisy HTML and parity with markdown
    - [x] markdown -> IR -> html (`tests/cross_format.rs`, structural-equivalence gate)
    - [x] structural equivalence checks where semantically valid
      (`structural_diff_bodies` + realistic fixture pages + rich md fixture)
-5. [ ] Add URL-source path validation (`Source::Url`) and metadata/title extraction tests. *(audit Task 4; `<title>`/`<h1>`/`og:title` extraction is already implemented and tested for file/raw ingest)*
+5. [x] Add URL-source path validation (`Source::Url`) and metadata/title extraction tests.
+   - `src/net/` blocking `reqwest` fetch (redirects, content-type→parser
+     sniffing with extension/body fallback, typed `Error::Network`); wired
+     into `Library::ingest` and CLI `http(s)://` args; hermetic loopback-server
+     tests in `tests/url_ingest.rs`. `<title>`/`<h1>`/`og:title` extraction
+     covered by `tests/html_ingest.rs`.
 
 ## Phase 4 — Persistence, Chunking, Embeddings, Vector Retrieval
 
@@ -119,12 +124,12 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
   trait surfaces for Phase 4/5 frozen; content-hash ingest dedupe live;
   provenance byte ranges in original-source coordinates.
 - **Phase 2B state:** complete (gate command green).
-- **Phase 3 state:** **complete except URL ingestion** (audit Tasks 2 & 3
-  done; Task 4 remaining).
-- **Exact next focus:** audit **Task 4** (URL ingestion) to close Phase 3,
-  then the Phase-4 track — Tasks 5/6/8 (plaintext emitter, SQLite store,
-  embedder+index) are unblocked and parallelizable, feeding Task 7 (chunker)
-  and Task 9 (query/context pipeline).
+- **Phase 3 state:** **complete** (audit Tasks 2, 3 & 4 done — HTML
+  parse/emit, both cross-format gates, and URL ingestion).
+- **Exact next focus:** the Phase-4 track — Tasks 5/6/8 (plaintext emitter,
+  SQLite store, embedder+index) are unblocked and parallelizable, feeding
+  Task 7 (chunker) and Task 9 (query/context pipeline). This is the half that
+  makes documents actually *searchable*.
 - **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).
