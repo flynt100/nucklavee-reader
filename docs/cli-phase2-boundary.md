@@ -33,7 +33,7 @@ Persistence semantics are intentionally narrow:
   - `--format` (default `markdown`)
   - `--normalize-bare-callouts` (markdown ingest only)
 - Supported emit format values:
-  - `markdown`, `html`
+  - `markdown`, `html`, `text`
 - Output: emitted content to stdout. HTML input is run through
   readability-style content extraction (chrome such as `<nav>`, `<header>`,
   `<footer>`, `<aside>`, `<script>` is stripped) before DOM→IR mapping.
@@ -66,7 +66,8 @@ Persistence semantics are intentionally narrow:
 | `ingest <path.md\|path.html>` | Supported | Prints in-memory `DocumentId` to stdout (valid only in current process). |
 | `ingest-emit <path.md\|path.html> --format markdown` | Supported | Prints emitted markdown to stdout (HTML input is content-extracted first). |
 | `ingest-emit <path.md\|path.html> --format html` | Supported | Prints emitted semantic HTML to stdout. |
-| `ingest-emit <path> --format <other>` | Supported (command), invalid input for format | Returns: `unsupported format '<value>'. supported: markdown, html`. |
+| `ingest-emit <path.md\|path.html> --format text` | Supported | Prints formatting-stripped plain text to stdout. |
+| `ingest-emit <path> --format <other>` | Supported (command), invalid input for format | Returns: `unsupported format '<value>'. supported: markdown, html, text`. |
 | `ingest-emit <path.docx>` | Supported (command), invalid input for extension | Returns: `unsupported file extension 'docx'. supported: .md, .html, .htm`. |
 | `emit --id <id> --format markdown` | Disabled | Returns disabled error describing process-local IDs and recommending `ingest-emit`. |
 | `query` | Not Implemented | Returns Phase-4 not-implemented error for query. |

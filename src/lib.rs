@@ -170,9 +170,7 @@ where
         match format {
             Format::Markdown => Ok(emitters::markdown::emit_markdown(&document)),
             Format::Html => Ok(emitters::html::emit_html(&document)),
-            Format::PlainText => Err(phase2_contract::invalid_input(
-                phase2_contract::unsupported_format_message("text"),
-            )),
+            Format::PlainText => Ok(emitters::text::emit_text(&document)),
         }
     }
 

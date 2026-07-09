@@ -72,6 +72,12 @@ Primary goal: robust content extraction from noisy HTML and parity with markdown
 
 Primary goal: make ingestion/search functional end-to-end over stored chunks.
 
+> **PlainText emitter (audit Task 5) is done** ahead of the rest of Phase 4,
+> since the chunker (Task 7) needs it for chunk `content`: spec §5.3 rendering
+> in `src/emitters/text.rs`, wired to `Format::PlainText` + CLI `--format text`
+> (`SUPPORTED_FORMATS` is now `markdown, html, text`). Covered by
+> `tests/text_emit.rs` + module golden tests.
+
 1. [ ] Implement `DocumentStore` SQLite backend:
    - [ ] document upsert and retrieval
    - [ ] chunk insert/retrieval by document
@@ -126,10 +132,11 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
 - **Phase 2B state:** complete (gate command green).
 - **Phase 3 state:** **complete** (audit Tasks 2, 3 & 4 done — HTML
   parse/emit, both cross-format gates, and URL ingestion).
-- **Exact next focus:** the Phase-4 track — Tasks 5/6/8 (plaintext emitter,
-  SQLite store, embedder+index) are unblocked and parallelizable, feeding
-  Task 7 (chunker) and Task 9 (query/context pipeline). This is the half that
-  makes documents actually *searchable*.
+- **Exact next focus:** the Phase-4 retrieval track. **Task 5 (plaintext
+  emitter) is done.** Remaining and parallelizable: Task 6 (SQLite store) and
+  Task 8 (embedder + usearch index), both feeding Task 7 (chunker) and then
+  Task 9 (query/context pipeline). This is the half that makes documents
+  actually *searchable*.
 - **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).

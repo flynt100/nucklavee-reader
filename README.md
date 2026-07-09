@@ -33,6 +33,10 @@ In short: **normalize anything, preserve structure, and make it searchable.**
 - **HTML emit** (Phase 3, Task 3): IR → semantic HTML (spec §5.2), escaped,
   with Strong/Em/Del style mapping; `--format html` on the CLI, `Format::Html`
   in the library.
+- **Plain-text emit** (Task 5): IR → readable, formatting-stripped text
+  (spec §5.3 — uppercased headings, `text (url)` links, 4-space-indented code,
+  `| ` quote gutters, pipe-delimited tables); `--format text`, `Format::PlainText`.
+  This is the rendering the chunker/embeddings will consume.
 - **Cross-format integrity, both directions**: html → IR → markdown → IR on
   realistic docs-site / wiki / blog pages, and markdown → IR → html → IR on a
   rich fixture (nested lists, tables, code, quotes, links, images), enforced
@@ -54,7 +58,6 @@ In short: **normalize anything, preserve structure, and make it searchable.**
 
 ## What Is Not Implemented Yet
 
-- PlainText emitter (Task 5)
 - SQLite persistence (Task 6), chunking (Task 7), embeddings + vector index
   (Task 8), query/context-window pipeline (Task 9)
 - Full CLI command set (`search`, `list`, `info`, `context`, `remove` — Task 10)
@@ -73,10 +76,11 @@ Per-task scopes, guardrails, and acceptance criteria live in
 3. ~~Task 2 — HTML parser (content extraction + DOM→IR)~~ ✅
 4. ~~Task 3 — HTML emitter + cross-format gates (both directions)~~ ✅
 5. ~~Task 4 — URL ingestion~~ ✅ **(Phase 3 complete)**
-6. Tasks 5–9 — plaintext emitter, SQLite store, chunker, embedder + vector
-   index, end-to-end query/context pipeline
-7. Task 10 — CLI rework
-8. Tasks 11–12 — PDF pipeline
+6. ~~Task 5 — PlainText emitter~~ ✅
+7. Tasks 6–9 — SQLite store, chunker, embedder + vector index, end-to-end
+   query/context pipeline
+8. Task 10 — CLI rework
+9. Tasks 11–12 — PDF pipeline
 
 ## Development
 
@@ -108,9 +112,9 @@ cargo run --bin nucklavee -- ingest-emit tests/fixtures/06_headings.md --format 
 cargo run --bin nucklavee -- ingest-emit https://example.com/page --format markdown
 ```
 
-`--format` supports `markdown` and `html`.
+`--format` supports `markdown`, `html`, and `text`.
 If another format is passed, the CLI/runtime error string is:
-`unsupported format '<value>'. supported: markdown, html`.
+`unsupported format '<value>'. supported: markdown, html, text`.
 
 Document IDs are process-local (in-memory store); use `ingest-emit` for
 reliable single-process behavior. For the complete command boundary and

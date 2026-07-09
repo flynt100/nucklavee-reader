@@ -35,8 +35,16 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > blocking `reqwest` fetch (redirects, `Content-Type`→parser sniffing with
 > extension/body fallback, typed `Error::Network`), wired into
 > `Library::ingest(Source::Url)` and CLI `http(s)://` arguments, with hermetic
-> loopback-server tests (`tests/url_ingest.rs`). Next: the Phase-4 retrieval
-> track — Tasks 5/6/8 are parallelizable, feeding Task 7 then Task 9.
+> loopback-server tests (`tests/url_ingest.rs`).
+>
+> **Task 5 (PlainText emitter) is complete**: `src/emitters/text.rs` (spec
+> §5.3), wired to `Format::PlainText` + CLI `--format text`;
+> `SUPPORTED_FORMATS` is now `markdown, html, text`. The library `Format`
+> enum is therefore fully supported — the only remaining "unsupported format"
+> boundary is the CLI string parse (tested with `rtf`). The dead
+> `emitter_stub!` macro was removed. Next: the retrieval track — Task 6
+> (SQLite store) and Task 8 (embedder + usearch) are parallelizable, feeding
+> Task 7 (chunker), then Task 9 (query/context pipeline).
 
 ---
 
