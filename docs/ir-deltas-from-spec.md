@@ -31,6 +31,36 @@ The chunker walks the IR (`Document.body`), reusing `BlockNode.prov.section_path
 computed at parse time — it does **not** take flat body text and must not
 re-derive heading hierarchies.
 
+`StructuralChunker` (`src/chunking/structural.rs`) implements this. Notable
+behaviors and deltas:
+
+- **Sections come from `section_path` equality.** Consecutive non-heading
+  blocks with the same `section_path` form one section; a chunk never spans a
+  section change (hence never crosses an H2 boundary). Sub-headings (deeper
+  levels) also start new chunks — finer granularity than the spec's minimum,
+  and still spec-valid.
+- **Headings are boundaries, not content** (per spec §6.2): their text lives
+  only in the `section_path` of the blocks beneath them, so a heading-only
+  document (no body) produces zero chunks.
+- **Tables and code blocks are their own chunks**, tagged `Table`/`Code`;
+  everything else accumulates into `Prose`. Code chunk content is the raw code
+  text (not the 4-space-indented plaintext-emitter form), since that is what
+  should be embedded.
+- **Budget splitting** uses tiktoken cl100k_base (bundled, offline): prose
+  splits at block, then sentence, then a decode-by-token-window fallback that
+  guarantees every chunk fits; code splits at blank lines; tables split by
+  rows, re-prepending the header row to each part.
+
+### Canonical stored IR (normalize-at-ingest)
+
+`Library::ingest` runs `normalize_document` before storing, so the stored IR
+is canonical regardless of source format (Markdown parser output was
+previously un-normalized while HTML output was already tidy). This merges
+adjacent `Inline::Text` runs and drops empty text nodes — whitespace-agnostic
+and provenance-preserving — so the chunker and any other reader of stored
+documents get consistent input. Documents inserted directly via
+`DocumentStore::upsert_document` (bypassing ingest) are stored as given.
+
 ## Storage / vector / embedder traits (spec §7)
 
 Frozen in the 2026-07-06 trait-surface push (Task 1 of the audit plan):

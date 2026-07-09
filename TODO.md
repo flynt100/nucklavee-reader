@@ -85,7 +85,15 @@ Primary goal: make ingestion/search functional end-to-end over stored chunks.
    - `src/storage/sqlite.rs` (rusqlite bundled, `PRAGMA user_version`
      migration); shared conformance suite runs against memory + sqlite +
      a persistence-across-reopen test (`tests/store_conformance.rs`).
-2. [ ] Implement structure-aware chunker with provenance (`section_path`, order, block type). *(audit Task 7)*
+2. [x] Implement structure-aware chunker with provenance (`section_path`, order, block type) (audit Task 7).
+   - `src/chunking/structural.rs` (`StructuralChunker`): groups consecutive
+     non-heading blocks by `section_path` (reusing parser provenance, never
+     re-deriving), tables/code as their own tagged chunks, prose accumulated;
+     token budget via tiktoken cl100k_base with block→sentence→token-window
+     splitting; tables split by rows re-prepending the header. Canonical
+     stored IR is guaranteed by normalize-at-ingest. Tests in
+     `tests/chunking.rs` (§11.2 acceptance: section boundaries, budget,
+     provenance, block types).
 3. [x] Implement embedder backend contract and at least one working provider path (audit Task 8).
    - `ApiEmbedder` (OpenAI-compatible blocking `reqwest`); mock-server tests
      in `tests/embedder_api.rs`.
@@ -140,11 +148,12 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
 - **Phase 2B state:** complete (gate command green).
 - **Phase 3 state:** **complete** (audit Tasks 2, 3 & 4 done — HTML
   parse/emit, both cross-format gates, and URL ingestion).
-- **Exact next focus:** the Phase-4 retrieval track. **Tasks 5, 6, and 8 are
-  done** (plaintext emitter; SQLite store; `ApiEmbedder` + `UsearchIndex`).
-  The building blocks now exist; remaining is **Task 7 (structure-aware
-  chunker)** then **Task 9 (pipeline wiring + `query` + `context_window`)**,
-  which finally connects ingest→chunk→embed→index→search end to end.
+- **Exact next focus:** **Task 9 — the pipeline that wires
+  ingest→chunk→embed→index and implements `query` + `context_window`.** All
+  of its building blocks now exist and are individually tested: stores (Task
+  6), plaintext rendering (Task 5), chunker (Task 7), embedder + vector index
+  (Task 8). Task 9 is the point Nucklavee first performs semantic search end
+  to end. Stored IR is canonicalized at ingest (decision: normalize-at-ingest).
 - **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).

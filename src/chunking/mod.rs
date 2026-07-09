@@ -45,3 +45,6 @@ impl Default for ChunkOptions {
 pub trait Chunker {
     fn chunk(&self, document: &Document, opts: &ChunkOptions) -> Result<Vec<Chunk>>;
 }
+
+pub mod structural;
+pub use structural::StructuralChunker;

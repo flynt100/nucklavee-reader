@@ -56,6 +56,12 @@ In short: **normalize anything, preserve structure, and make it searchable.**
   sequence). SQLite persists the full IR as JSON, so a document ingested in
   one process is retrievable and re-emittable in another. A shared
   conformance suite runs against both backends.
+- **Structure-aware chunker** (`StructuralChunker`, Task 7): slices a document
+  into embedding-ready chunks that never cross a section boundary, reusing the
+  parser's `section_path` provenance; tables and code become their own tagged
+  chunks, prose accumulates, and oversized content is split within a token
+  budget (tiktoken cl100k_base). Stored IR is canonicalized at ingest so
+  chunking is consistent across source formats.
 - **Embeddings + vector search primitives**: an `ApiEmbedder` (OpenAI-compatible
   `/v1/embeddings`, blocking) and a `UsearchIndex` (cosine HNSW via `usearch`)
   with add/search/remove and file persistence. Not yet wired into an
@@ -66,9 +72,10 @@ In short: **normalize anything, preserve structure, and make it searchable.**
 
 ## What Is Not Implemented Yet
 
-- Chunking (Task 7) and the end-to-end query/context-window pipeline that
-  wires ingest → chunk → embed → index → search (Task 9). The storage,
-  embedding, and vector-index building blocks exist but are not yet connected.
+- The end-to-end query/context-window pipeline that wires ingest → chunk →
+  embed → index → search (Task 9). Every building block (store, chunker,
+  embedder, vector index) exists and is tested; they are not yet connected
+  into `query`/`context_window`, which still return "not implemented" errors.
 - Full CLI command set (`search`, `list`, `info`, `context`, `remove` — Task 10)
 - PDF pipeline (Tasks 11–12)
 
@@ -87,8 +94,8 @@ Per-task scopes, guardrails, and acceptance criteria live in
 5. ~~Task 4 — URL ingestion~~ ✅ **(Phase 3 complete)**
 6. ~~Task 5 — PlainText emitter~~ ✅
 7. ~~Task 6 — SQLite store~~ ✅ · ~~Task 8 — embedder + vector index~~ ✅
-8. Task 7 — structure-aware chunker
-9. Task 9 — pipeline wiring + `query` + `context_window`
+8. ~~Task 7 — structure-aware chunker~~ ✅
+9. Task 9 — pipeline wiring + `query` + `context_window` (**next**)
 10. Task 10 — CLI rework
 11. Tasks 11–12 — PDF pipeline
 

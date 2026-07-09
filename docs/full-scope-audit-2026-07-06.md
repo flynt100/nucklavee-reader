@@ -53,8 +53,15 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > a nightly macro; (2) chunk-ordering divergence between the two stores,
 > unified to `sequence_index`; (3) usearch's `u64` keys bridged to 128-bit
 > `ChunkId`s; (4) reqwest `json` feature left off, manual `serde_json`
-> (de)serialization instead. Next: **Task 7 (chunker)**, then **Task 9**
-> wires ingest→chunk→embed→index→query end to end.
+> (de)serialization instead.
+>
+> **Task 7 (structure-aware chunker) is complete** (`StructuralChunker`,
+> tiktoken cl100k_base), with the §11.2 acceptance suite. The pre-Task-7
+> normalization decision was made — **normalize-at-ingest** (canonical stored
+> IR): `Library::ingest` now runs `normalize_document` before storing, so the
+> chunker gets consistent input across Markdown and HTML. Next: **Task 9**
+> wires ingest→chunk→embed→index and implements `query`/`context_window` end
+> to end.
 
 ---
 

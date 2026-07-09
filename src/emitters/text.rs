@@ -32,6 +32,18 @@ pub fn emit_text(document: &Document) -> String {
     blocks_to_text(&document.body)
 }
 
+/// Render an arbitrary block slice as plain text (used by the chunker to build
+/// chunk content from a subset of a document's blocks).
+pub fn emit_text_blocks(nodes: &[BlockNode]) -> String {
+    blocks_to_text(nodes)
+}
+
+/// Render inlines to a single plain-text line (styling stripped, links as
+/// `text (url)`, line breaks as spaces). Used for table cells and headings.
+pub fn render_inlines_plain(inlines: &[Inline]) -> String {
+    render_inlines(inlines, " ")
+}
+
 /// Render a block sequence, one blank line between blocks.
 fn blocks_to_text(nodes: &[BlockNode]) -> String {
     nodes
