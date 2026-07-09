@@ -33,6 +33,10 @@ In short: **normalize anything, preserve structure, and make it searchable.**
 - **HTML emit** (Phase 3, Task 3): IR → semantic HTML (spec §5.2), escaped,
   with Strong/Em/Del style mapping; `--format html` on the CLI, `Format::Html`
   in the library.
+- **Plain-text emit** (Task 5): IR → readable, formatting-stripped text
+  (spec §5.3 — uppercased headings, `text (url)` links, 4-space-indented code,
+  `| ` quote gutters, pipe-delimited tables); `--format text`, `Format::PlainText`.
+  This is the rendering the chunker/embeddings will consume.
 - **Cross-format integrity, both directions**: html → IR → markdown → IR on
   realistic docs-site / wiki / blog pages, and markdown → IR → html → IR on a
   rich fixture (nested lists, tables, code, quotes, links, images), enforced
@@ -46,17 +50,32 @@ In short: **normalize anything, preserve structure, and make it searchable.**
   the final URL as provenance. Network failures surface as typed errors.
 - **Content-hash deduplication** on ingest (spec §7.4): identical content
   returns the existing document ID.
-- **In-memory document store** implementing the full frozen `DocumentStore`
-  contract (hash lookup, listing, removal, chunk retrieval).
+- **Document stores**: an in-memory store and a **SQLite** store
+  (`rusqlite`, bundled), both implementing the full frozen `DocumentStore`
+  contract (hash lookup, listing, removal, chunk retrieval ordered by
+  sequence). SQLite persists the full IR as JSON, so a document ingested in
+  one process is retrievable and re-emittable in another. A shared
+  conformance suite runs against both backends.
+- **Structure-aware chunker** (`StructuralChunker`, Task 7): slices a document
+  into embedding-ready chunks that never cross a section boundary, reusing the
+  parser's `section_path` provenance; tables and code become their own tagged
+  chunks, prose accumulates, and oversized content is split within a token
+  budget (tiktoken cl100k_base). Stored IR is canonicalized at ingest so
+  chunking is consistent across source formats.
+- **Embeddings + vector search primitives**: an `ApiEmbedder` (OpenAI-compatible
+  `/v1/embeddings`, blocking) and a `UsearchIndex` (cosine HNSW via `usearch`)
+  with add/search/remove and file persistence. Not yet wired into an
+  end-to-end `query` — that is Task 9.
 - **CLI**: `ingest` / `ingest-emit` over `.md`, `.html`, `.htm` files or
   `http(s)://` URLs, emitting `markdown` or `html`, with locked boundary
   errors for everything else.
 
 ## What Is Not Implemented Yet
 
-- PlainText emitter (Task 5)
-- SQLite persistence (Task 6), chunking (Task 7), embeddings + vector index
-  (Task 8), query/context-window pipeline (Task 9)
+- The end-to-end query/context-window pipeline that wires ingest → chunk →
+  embed → index → search (Task 9). Every building block (store, chunker,
+  embedder, vector index) exists and is tested; they are not yet connected
+  into `query`/`context_window`, which still return "not implemented" errors.
 - Full CLI command set (`search`, `list`, `info`, `context`, `remove` — Task 10)
 - PDF pipeline (Tasks 11–12)
 
@@ -73,10 +92,12 @@ Per-task scopes, guardrails, and acceptance criteria live in
 3. ~~Task 2 — HTML parser (content extraction + DOM→IR)~~ ✅
 4. ~~Task 3 — HTML emitter + cross-format gates (both directions)~~ ✅
 5. ~~Task 4 — URL ingestion~~ ✅ **(Phase 3 complete)**
-6. Tasks 5–9 — plaintext emitter, SQLite store, chunker, embedder + vector
-   index, end-to-end query/context pipeline
-7. Task 10 — CLI rework
-8. Tasks 11–12 — PDF pipeline
+6. ~~Task 5 — PlainText emitter~~ ✅
+7. ~~Task 6 — SQLite store~~ ✅ · ~~Task 8 — embedder + vector index~~ ✅
+8. ~~Task 7 — structure-aware chunker~~ ✅
+9. Task 9 — pipeline wiring + `query` + `context_window` (**next**)
+10. Task 10 — CLI rework
+11. Tasks 11–12 — PDF pipeline
 
 ## Development
 
@@ -108,9 +129,9 @@ cargo run --bin nucklavee -- ingest-emit tests/fixtures/06_headings.md --format 
 cargo run --bin nucklavee -- ingest-emit https://example.com/page --format markdown
 ```
 
-`--format` supports `markdown` and `html`.
+`--format` supports `markdown`, `html`, and `text`.
 If another format is passed, the CLI/runtime error string is:
-`unsupported format '<value>'. supported: markdown, html`.
+`unsupported format '<value>'. supported: markdown, html, text`.
 
 Document IDs are process-local (in-memory store); use `ingest-emit` for
 reliable single-process behavior. For the complete command boundary and

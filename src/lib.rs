@@ -141,6 +141,13 @@ where
         validate(&doc, Some(source_len))
             .map_err(|err| Error::InvalidInput(format!("validation failed: {err}")))?;
 
+        // Canonicalize the stored IR so every backend and every downstream
+        // reader (the chunker in particular) sees one tidy form regardless of
+        // source format: merges adjacent text runs and drops empty text
+        // nodes. Whitespace-agnostic and provenance-preserving.
+        let mut doc = doc;
+        normalize_document(&mut doc);
+
         // Content-hash deduplication (spec §7.4): re-ingesting identical raw
         // content returns the existing document instead of storing a copy.
         // Note: dedupe keys on raw content only, so differing IngestOptions
@@ -170,9 +177,7 @@ where
         match format {
             Format::Markdown => Ok(emitters::markdown::emit_markdown(&document)),
             Format::Html => Ok(emitters::html::emit_html(&document)),
-            Format::PlainText => Err(phase2_contract::invalid_input(
-                phase2_contract::unsupported_format_message("text"),
-            )),
+            Format::PlainText => Ok(emitters::text::emit_text(&document)),
         }
     }
 

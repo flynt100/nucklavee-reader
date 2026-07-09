@@ -72,15 +72,37 @@ Primary goal: robust content extraction from noisy HTML and parity with markdown
 
 Primary goal: make ingestion/search functional end-to-end over stored chunks.
 
-1. [ ] Implement `DocumentStore` SQLite backend:
-   - [ ] document upsert and retrieval
-   - [ ] chunk insert/retrieval by document
-   - [ ] content-hash dedupe behavior integration
-2. [ ] Implement structure-aware chunker with provenance (`section_path`, order, block type).
-3. [ ] Implement embedder backend contract and at least one working provider path.
-4. [ ] Implement vector index backend integration (HNSW/usearch abstraction target).
-5. [ ] Wire pipeline: ingest -> parse -> validate/canonicalize -> store -> chunk -> embed -> index.
-6. [ ] Implement ranked semantic query returning chunks with provenance.
+> **PlainText emitter (audit Task 5) is done** ahead of the rest of Phase 4,
+> since the chunker (Task 7) needs it for chunk `content`: spec §5.3 rendering
+> in `src/emitters/text.rs`, wired to `Format::PlainText` + CLI `--format text`
+> (`SUPPORTED_FORMATS` is now `markdown, html, text`). Covered by
+> `tests/text_emit.rs` + module golden tests.
+
+1. [x] Implement `DocumentStore` SQLite backend (audit Task 6):
+   - [x] document upsert and retrieval (full IR stored as JSON for cross-process emit)
+   - [x] chunk insert/retrieval by document (ordered by `sequence_index`)
+   - [x] content-hash dedupe behavior integration (`content_hash UNIQUE`)
+   - `src/storage/sqlite.rs` (rusqlite bundled, `PRAGMA user_version`
+     migration); shared conformance suite runs against memory + sqlite +
+     a persistence-across-reopen test (`tests/store_conformance.rs`).
+2. [x] Implement structure-aware chunker with provenance (`section_path`, order, block type) (audit Task 7).
+   - `src/chunking/structural.rs` (`StructuralChunker`): groups consecutive
+     non-heading blocks by `section_path` (reusing parser provenance, never
+     re-deriving), tables/code as their own tagged chunks, prose accumulated;
+     token budget via tiktoken cl100k_base with block→sentence→token-window
+     splitting; tables split by rows re-prepending the header. Canonical
+     stored IR is guaranteed by normalize-at-ingest. Tests in
+     `tests/chunking.rs` (§11.2 acceptance: section boundaries, budget,
+     provenance, block types).
+3. [x] Implement embedder backend contract and at least one working provider path (audit Task 8).
+   - `ApiEmbedder` (OpenAI-compatible blocking `reqwest`); mock-server tests
+     in `tests/embedder_api.rs`.
+4. [x] Implement vector index backend integration (HNSW/usearch abstraction target) (audit Task 8).
+   - `UsearchIndex` (cosine HNSW) with a UUID⇆u64 keymap + JSON sidecar for
+     `save`/`load`; add/search/remove/persistence tests in
+     `tests/vector_usearch.rs`.
+5. [ ] Wire pipeline: ingest -> parse -> validate/canonicalize -> store -> chunk -> embed -> index. *(audit Task 9)*
+6. [ ] Implement ranked semantic query returning chunks with provenance. *(audit Task 9)*
 
 ## Phase 5 — CLI Command Wiring and Operator UX
 
@@ -126,10 +148,12 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
 - **Phase 2B state:** complete (gate command green).
 - **Phase 3 state:** **complete** (audit Tasks 2, 3 & 4 done — HTML
   parse/emit, both cross-format gates, and URL ingestion).
-- **Exact next focus:** the Phase-4 track — Tasks 5/6/8 (plaintext emitter,
-  SQLite store, embedder+index) are unblocked and parallelizable, feeding
-  Task 7 (chunker) and Task 9 (query/context pipeline). This is the half that
-  makes documents actually *searchable*.
+- **Exact next focus:** **Task 9 — the pipeline that wires
+  ingest→chunk→embed→index and implements `query` + `context_window`.** All
+  of its building blocks now exist and are individually tested: stores (Task
+  6), plaintext rendering (Task 5), chunker (Task 7), embedder + vector index
+  (Task 8). Task 9 is the point Nucklavee first performs semantic search end
+  to end. Stored IR is canonicalized at ingest (decision: normalize-at-ingest).
 - **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).

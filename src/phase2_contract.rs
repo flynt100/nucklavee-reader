@@ -15,7 +15,7 @@ pub const PDF_PIPELINE_NOT_IMPLEMENTED: &str =
 pub const EMIT_BY_ID_DISABLED: &str = "emit --id is disabled because document IDs are process-local. use `ingest-emit <path> --format markdown`";
 
 /// Supported *emit* formats. Ingest additionally accepts HTML (Phase 3).
-pub const SUPPORTED_FORMATS: &str = "markdown, html";
+pub const SUPPORTED_FORMATS: &str = "markdown, html, text";
 
 /// Supported ingest file extensions.
 pub const SUPPORTED_EXTENSIONS: &str = ".md, .html, .htm";

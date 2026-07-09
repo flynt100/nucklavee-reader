@@ -153,6 +153,7 @@ fn parse_format(raw: &str) -> Result<Format> {
     match raw {
         "markdown" => Ok(Format::Markdown),
         "html" => Ok(Format::Html),
+        "text" => Ok(Format::PlainText),
         _ => Err(phase2_contract::invalid_input(
             phase2_contract::unsupported_format_message(raw),
         )),

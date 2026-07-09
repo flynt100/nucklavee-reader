@@ -35,8 +35,33 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > blocking `reqwest` fetch (redirects, `Content-Type`→parser sniffing with
 > extension/body fallback, typed `Error::Network`), wired into
 > `Library::ingest(Source::Url)` and CLI `http(s)://` arguments, with hermetic
-> loopback-server tests (`tests/url_ingest.rs`). Next: the Phase-4 retrieval
-> track — Tasks 5/6/8 are parallelizable, feeding Task 7 then Task 9.
+> loopback-server tests (`tests/url_ingest.rs`).
+>
+> **Task 5 (PlainText emitter) is complete**: `src/emitters/text.rs` (spec
+> §5.3), wired to `Format::PlainText` + CLI `--format text`;
+> `SUPPORTED_FORMATS` is now `markdown, html, text`. The library `Format`
+> enum is therefore fully supported — the only remaining "unsupported format"
+> boundary is the CLI string parse (tested with `rtf`). The dead
+> `emitter_stub!` macro was removed.
+>
+> **Tasks 6 and 8 are complete.** Task 6: `SqliteDocumentStore`
+> (`rusqlite` bundled, full-IR JSON column, `user_version` migration), with a
+> shared conformance suite over memory + sqlite + a reopen-persistence test.
+> Task 8: `ApiEmbedder` (OpenAI-compatible blocking client, mock-server
+> tested) and `UsearchIndex` (cosine HNSW with a UUID⇆u64 keymap sidecar).
+> Edge cases surfaced and handled: (1) `rusqlite` pinned to 0.32 — 0.40 needs
+> a nightly macro; (2) chunk-ordering divergence between the two stores,
+> unified to `sequence_index`; (3) usearch's `u64` keys bridged to 128-bit
+> `ChunkId`s; (4) reqwest `json` feature left off, manual `serde_json`
+> (de)serialization instead.
+>
+> **Task 7 (structure-aware chunker) is complete** (`StructuralChunker`,
+> tiktoken cl100k_base), with the §11.2 acceptance suite. The pre-Task-7
+> normalization decision was made — **normalize-at-ingest** (canonical stored
+> IR): `Library::ingest` now runs `normalize_document` before storing, so the
+> chunker gets consistent input across Markdown and HTML. Next: **Task 9**
+> wires ingest→chunk→embed→index and implements `query`/`context_window` end
+> to end.
 
 ---
 

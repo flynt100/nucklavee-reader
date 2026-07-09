@@ -31,16 +31,74 @@ The chunker walks the IR (`Document.body`), reusing `BlockNode.prov.section_path
 computed at parse time — it does **not** take flat body text and must not
 re-derive heading hierarchies.
 
+`StructuralChunker` (`src/chunking/structural.rs`) implements this. Notable
+behaviors and deltas:
+
+- **Sections come from `section_path` equality.** Consecutive non-heading
+  blocks with the same `section_path` form one section; a chunk never spans a
+  section change (hence never crosses an H2 boundary). Sub-headings (deeper
+  levels) also start new chunks — finer granularity than the spec's minimum,
+  and still spec-valid.
+- **Headings are boundaries, not content** (per spec §6.2): their text lives
+  only in the `section_path` of the blocks beneath them, so a heading-only
+  document (no body) produces zero chunks.
+- **Tables and code blocks are their own chunks**, tagged `Table`/`Code`;
+  everything else accumulates into `Prose`. Code chunk content is the raw code
+  text (not the 4-space-indented plaintext-emitter form), since that is what
+  should be embedded.
+- **Budget splitting** uses tiktoken cl100k_base (bundled, offline): prose
+  splits at block, then sentence, then a decode-by-token-window fallback that
+  guarantees every chunk fits; code splits at blank lines; tables split by
+  rows, re-prepending the header row to each part.
+
+### Canonical stored IR (normalize-at-ingest)
+
+`Library::ingest` runs `normalize_document` before storing, so the stored IR
+is canonical regardless of source format (Markdown parser output was
+previously un-normalized while HTML output was already tidy). This merges
+adjacent `Inline::Text` runs and drops empty text nodes — whitespace-agnostic
+and provenance-preserving — so the chunker and any other reader of stored
+documents get consistent input. Documents inserted directly via
+`DocumentStore::upsert_document` (bypassing ingest) are stored as given.
+
 ## Storage / vector / embedder traits (spec §7)
 
 Frozen in the 2026-07-06 trait-surface push (Task 1 of the audit plan):
 
 - `DocumentStore`: `upsert_document`, `get_document`, `find_by_content_hash`,
   `list_documents`, `remove_document` (also removes the document's chunks),
-  `insert_chunks`, `get_chunks_by_document`, `get_chunks_by_ids`.
+  `insert_chunks`, `get_chunks_by_document` (**ordered by `sequence_index`** —
+  both backends), `get_chunks_by_ids` (request order preserved, unknown IDs
+  skipped).
 - `VectorIndex`: `add`, `remove`, `search`, `save(&Path)`, `load(&Path)`.
 - `Embedder`: unchanged from spec, **blocking I/O** — implementations use
   `reqwest::blocking`; no tokio/async runtime in the MVP.
+
+### Backend implementations (Tasks 6 & 8) and their edge cases
+
+- **`SqliteDocumentStore`** (`rusqlite`, `bundled`). Schema keeps the spec's
+  queryable columns *plus* a `doc_json` column holding the full serialized IR,
+  so cross-process `get_document`/`emit` works (the in-memory store cannot).
+  Schema version is tracked in `PRAGMA user_version`.
+  - *Discrepancy resolved:* `get_chunks_by_document` ordering was initially
+    insertion-order in the memory store vs `sequence_index` in SQLite; the
+    conformance suite caught it and both now sort by `sequence_index` (the
+    documented contract).
+  - *Dependency pin:* `rusqlite` is pinned to `0.32` — `0.40`'s
+    `libsqlite3-sys` build script uses a nightly-only `cfg_select!` macro that
+    does not compile on stable.
+- **`UsearchIndex`** (`usearch`, cosine HNSW). **Key-width bridge:** usearch
+  addresses vectors by `u64`, but `ChunkId` is a 128-bit UUID, so the index
+  keeps a bidirectional `u64 ⇆ ChunkId` map and assigns sequential `u64` keys.
+  `save`/`load` persist that map in a `<index>.keymap.json` sidecar (the raw
+  usearch file only stores `u64` keys). `search` returns
+  `(ChunkId, cosine_distance)` ascending (closest first).
+- **`ApiEmbedder`** (OpenAI-compatible `/v1/embeddings`, `reqwest::blocking`).
+  Request/response JSON is (de)serialized manually with `serde_json` because
+  reqwest's `json` feature is disabled to keep the dependency surface small.
+  Results are re-sorted by the provider's `index` field and validated against
+  the configured `dimension`. `use_env_proxy` mirrors `crate::net` so tests
+  hit a loopback mock directly.
 
 ## Parsers / emitters (spec §4–5)
 

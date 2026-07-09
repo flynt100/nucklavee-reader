@@ -16,6 +16,7 @@ pub trait DocumentStore {
     /// unknown ID is not an error.
     fn remove_document(&self, id: DocumentId) -> Result<()>;
     fn insert_chunks(&self, chunks: &[Chunk]) -> Result<()>;
+    /// Chunks for a document, ordered by `sequence_index` (all backends).
     fn get_chunks_by_document(&self, id: DocumentId) -> Result<Vec<Chunk>>;
     /// Fetch chunks by ID, preserving the order of `ids`. Unknown IDs are
     /// skipped (the vector index may lag behind chunk deletion).
