@@ -7,7 +7,9 @@ Nucklavee is a Rust-first **universal document transformation library** focused 
 - Embedding and vector search over chunks
 - Context-window assembly for LLM/RAG workflows
 
-The target architecture is defined in `nucklavee-spec.md`.
+The target architecture is defined in `nucklavee-spec.md`; the deltas between
+the spec's sketches and the implemented types are recorded in
+`docs/ir-deltas-from-spec.md`.
 
 ## Project Goal
 
@@ -15,55 +17,66 @@ Build a standalone crate and CLI that can ingest source documents and produce re
 
 In short: **normalize anything, preserve structure, and make it searchable.**
 
-## Current State
-
-This repository has moved beyond pure scaffolding and now includes a working
-Markdown ingest/emit slice plus test harnesses:
-
-- `Library` API scaffold in `src/lib.rs`
-- Core IR types in `src/ir/mod.rs`
-- Parser trait + format parser paths (`markdown` implemented; `html`/`pdf` still scaffolded)
-- Emitter trait + format emitter paths (`markdown` implemented; others still scaffolded)
-- Chunking model + trait scaffold
-- Storage abstraction + sqlite placeholder
-- Vector index abstraction + usearch placeholder
-- Embedder abstraction + API embedder config scaffold
-- Context/pipeline placeholders
-- CLI binary target scaffold (`nucklavee`)
-- Markdown roundtrip harness and fixture-driven tests
-
 ## What Works Right Now
 
-- The crate compiles.
-- The CLI target builds and runs.
-- Markdown parser is implemented.
-- Markdown emitter is implemented.
-- IR roundtrip harness (parse -> emit -> parse -> semantic compare) is implemented.
-- Architecture boundaries are in place for incremental implementation.
+- **Markdown ingest → IR → markdown emit**, hardened by a 40+-fixture
+  roundtrip harness, golden outputs, and determinism gates. Includes
+  Obsidian-flavored input repair (frontmatter, callouts, wikilinks, math
+  shielding, TSV-paragraph promotion) surfaced as typed diagnostics.
+- **HTML ingest → IR → markdown emit** (Phase 3, Task 2): readability-style
+  content extraction (nav/header/footer/aside/script chrome stripped, densest
+  `<main>`/`<article>`/container selected), DOM→IR mapping for headings,
+  paragraphs, code blocks (with `language-*` detection), tables (header
+  promotion + ragged-row padding), nested lists, blockquotes, links, images,
+  styled text; title from `<title>` → `<h1>` → `og:title`; unclassifiable
+  elements degrade to `GenericBlock` with class-name hints and diagnostics.
+- **HTML emit** (Phase 3, Task 3): IR → semantic HTML (spec §5.2), escaped,
+  with Strong/Em/Del style mapping; `--format html` on the CLI, `Format::Html`
+  in the library.
+- **Cross-format integrity, both directions**: html → IR → markdown → IR on
+  realistic docs-site / wiki / blog pages, and markdown → IR → html → IR on a
+  rich fixture (nested lists, tables, code, quotes, links, images), enforced
+  by structural equivalence.
+- **Provenance in original-source coordinates**: block byte ranges survive
+  the parser's internal input rewrites (markdown); HTML blocks carry heading
+  `section_path` provenance.
+- **URL ingestion** (Phase 3, Task 4): fetch an `http(s)://` page (blocking
+  `reqwest`, redirects followed), auto-detect HTML vs Markdown from the
+  `Content-Type` header (with URL-extension and body fallbacks), and record
+  the final URL as provenance. Network failures surface as typed errors.
+- **Content-hash deduplication** on ingest (spec §7.4): identical content
+  returns the existing document ID.
+- **In-memory document store** implementing the full frozen `DocumentStore`
+  contract (hash lookup, listing, removal, chunk retrieval).
+- **CLI**: `ingest` / `ingest-emit` over `.md`, `.html`, `.htm` files or
+  `http(s)://` URLs, emitting `markdown` or `html`, with locked boundary
+  errors for everything else.
 
 ## What Is Not Implemented Yet
 
-- HTML and PDF parser logic
-- Non-markdown emitter implementations
-- Chunking algorithm implementation
-- SQLite persistence implementation
-- Vector index integration
-- Embedding API calls
-- End-to-end ingest/search/context flows
+- PlainText emitter (Task 5)
+- SQLite persistence (Task 6), chunking (Task 7), embeddings + vector index
+  (Task 8), query/context-window pipeline (Task 9)
+- Full CLI command set (`search`, `list`, `info`, `context`, `remove` — Task 10)
+- PDF pipeline (Tasks 11–12)
 
-Remaining unimplemented paths currently return explicit `not implemented` errors.
+Remaining unimplemented paths return explicit, tested `not implemented` /
+`invalid input` errors (see `docs/cli-phase2-boundary.md`).
 
-## Near-Term Implementation Order
+## Implementation Order
 
-1. **Phase 2B exit checklist is green** in the current revision:
-   - fixture expansion classification enforced,
-   - CLI smoke-contract boundaries locked,
-   - `cargo test --test markdown_roundtrip --test cli_smoke_contract` passing.
-2. Start **Phase 3** (HTML parser/emitter + cross-format integrity).
-3. Continue **Cross-Phase Quality Gates** in parallel (module-boundary unit tests, golden fixtures, IR property tests, typed error taxonomy consistency, performance baselines, and per-phase docs updates).
-4. Store + chunking + embedder + vector index.
-5. CLI command wiring.
-6. PDF pipeline (iterative heuristics).
+Per-task scopes, guardrails, and acceptance criteria live in
+`docs/full-scope-audit-2026-07-06.md`; roadmap status lives in `TODO.md`.
+
+1. ~~Phase 1 / 2A / 2B — markdown core loop + hardening~~ ✅
+2. ~~Task 0/1 — cleanup, trait freeze, dedupe, provenance remap~~ ✅
+3. ~~Task 2 — HTML parser (content extraction + DOM→IR)~~ ✅
+4. ~~Task 3 — HTML emitter + cross-format gates (both directions)~~ ✅
+5. ~~Task 4 — URL ingestion~~ ✅ **(Phase 3 complete)**
+6. Tasks 5–9 — plaintext emitter, SQLite store, chunker, embedder + vector
+   index, end-to-end query/context pipeline
+7. Task 10 — CLI rework
+8. Tasks 11–12 — PDF pipeline
 
 ## Development
 
@@ -79,37 +92,35 @@ cargo build
 cargo test
 ```
 
-### Run CLI scaffold
+### CLI usage
 
 ```bash
-cargo run --bin nucklavee
+# Markdown roundtrip
+cargo run --bin nucklavee -- ingest-emit tests/corpus/electromagnetic-valence.md --format markdown
+
+# HTML → markdown (content extraction + DOM→IR mapping)
+cargo run --bin nucklavee -- ingest-emit tests/fixtures/html/docs_site.html --format markdown
+
+# Either source → HTML
+cargo run --bin nucklavee -- ingest-emit tests/fixtures/06_headings.md --format html
+
+# Fetch a URL and emit it as markdown (HTML vs Markdown auto-detected)
+cargo run --bin nucklavee -- ingest-emit https://example.com/page --format markdown
 ```
 
-### Phase-2 CLI usage (important)
-
-Phase 2 supports retrieval through `ingest-emit` only.
-
-Persistence semantics are strict:
-
-- The CLI uses an in-memory document store.
-- Document IDs are process-local and only valid inside the process that created them.
-- IDs printed by `ingest` are not reusable across separate CLI invocations.
-
-Use this command for reliable behavior:
-
-```bash
-cargo run --bin nucklavee -- ingest-emit ./fixtures/sample.md --format markdown
-```
-
-`--format` currently supports exactly: `markdown`.
+`--format` supports `markdown` and `html`.
 If another format is passed, the CLI/runtime error string is:
-`unsupported format '<value>'. supported: markdown`.
+`unsupported format '<value>'. supported: markdown, html`.
 
-For the complete command boundary and behavior matrix, see
-`docs/cli-phase2-boundary.md`.
+Document IDs are process-local (in-memory store); use `ingest-emit` for
+reliable single-process behavior. For the complete command boundary and
+behavior matrix, see `docs/cli-phase2-boundary.md`.
 
-## Reference Spec
+## Reference Docs
 
 - `nucklavee-spec.md` (source of truth for scope and behavior)
+- `docs/ir-deltas-from-spec.md` (spec-vs-implementation deltas — read before building)
+- `docs/full-scope-audit-2026-07-06.md` (audit + per-task build plan)
 - `docs/phase-gates.md` (phase exit criteria and blocker vs warning policy)
 - `docs/normalization-deltas.md` (allowed markdown parse/emit deltas vs semantic regressions)
+- `docs/cli-phase2-boundary.md` (CLI command boundary and behavior matrix)

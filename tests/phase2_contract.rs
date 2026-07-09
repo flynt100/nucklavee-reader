@@ -48,15 +48,13 @@ fn library_emit_unsupported_formats_match_cli_parse_contract() {
 
     let text_err = lib
         .emit(id, Format::PlainText)
-        .expect_err("text emit should fail in phase 2");
+        .expect_err("text emit is not implemented until Task 5");
     let expected_text_message = phase2_contract::unsupported_format_message("text");
     assert!(matches!(text_err, Error::InvalidInput(ref msg) if msg == &expected_text_message));
 
-    let html_err = lib
-        .emit(id, Format::Html)
-        .expect_err("html emit should fail in phase 2");
-    let expected_html_message = phase2_contract::unsupported_format_message("html");
-    assert!(matches!(html_err, Error::InvalidInput(ref msg) if msg == &expected_html_message));
+    // HTML emit is supported as of Phase 3 (Task 3).
+    let html = lib.emit(id, Format::Html).expect("html emit should succeed");
+    assert!(html.contains("<h1>title</h1>"), "unexpected html: {html}");
 }
 
 #[test]

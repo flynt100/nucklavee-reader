@@ -12,7 +12,31 @@ _Baseline: `main` @ `cc01263` (post Phase 2B QC merge)_
 > additional pre-existing bug not listed below: math shielding replaced
 > `\[ \]` spans inside inline code with the literal placeholder character in
 > both IR and emitted output (symmetric corruption, invisible to roundtrip
-> tests). Tasks 2+ remain open and unblocked.
+> tests).
+>
+> **Task 2 (HTML parser) is also complete** (same day): `scraper`-based
+> content extraction + DOM→IR mapping in `src/parsers/html.rs`, wired into
+> `Library::ingest` for `Source::RawHtml` and `.html`/`.htm` files, with
+> html→IR→markdown→IR equivalence gates over three realistic fixture pages
+> (`tests/html_ingest.rs`, 17 tests) and updated boundary contracts. A known
+> limitation is documented for Task 3/4 pickup: math-like `$…$` syntax inside
+> link URLs is still shielded by the markdown parser pre-cmark (pre-existing,
+> symmetric).
+>
+> **A behavior-neutral parser-dedup pass** then landed (sanity-check items):
+> shared `parsers::SectionPathTracker` + `GENERIC_BLOCK_DEFAULT_CONFIDENCE`,
+> consolidated HTML whitespace helpers, and doc comments pinning the
+> `ir::normalize` vs HTML `finalize_inlines` distinction. **Task 3 (HTML
+> emitter) is complete**: `src/emitters/html.rs` (spec §5.2), wired to
+> `Format::Html` + CLI `--format html`, with markdown→IR→html→IR structural
+> gates (`tests/cross_format.rs`) closing the second cross-format direction.
+>
+> **Task 4 (URL ingestion) is complete**, closing Phase 3: `src/net` adds a
+> blocking `reqwest` fetch (redirects, `Content-Type`→parser sniffing with
+> extension/body fallback, typed `Error::Network`), wired into
+> `Library::ingest(Source::Url)` and CLI `http(s)://` arguments, with hermetic
+> loopback-server tests (`tests/url_ingest.rs`). Next: the Phase-4 retrieval
+> track — Tasks 5/6/8 are parallelizable, feeding Task 7 then Task 9.
 
 ---
 

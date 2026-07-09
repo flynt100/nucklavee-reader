@@ -45,14 +45,28 @@ Primary goal: tighten behavior contracts and handoff boundaries around the compl
 
 Primary goal: robust content extraction from noisy HTML and parity with markdown IR behavior.
 
-1. [ ] Implement readability-style content extraction before DOM mapping.
-2. [ ] Implement DOM-to-IR mapping for core block/inline semantics.
-3. [ ] Implement HTML emitter for faithful structural output from IR.
-4. [ ] Add cross-format tests:
-   - [ ] html -> IR -> markdown
-   - [ ] markdown -> IR -> html
-   - [ ] structural equivalence checks where semantically valid
-5. [ ] Add URL-source path validation (`Source::Url`) and metadata/title extraction tests.
+1. [x] Implement readability-style content extraction before DOM mapping.
+   - Chrome skip-list + semantic `<main>`/`<article>`/`[role=main]` shortcut +
+     density descent (`src/parsers/html.rs`); covered by `tests/html_ingest.rs`.
+2. [x] Implement DOM-to-IR mapping for core block/inline semantics.
+   - Headings/paragraphs/code (with `language-*`)/tables (header promotion,
+     ragged-row padding)/lists/blockquotes/hr + full inline set; unknown
+     elements degrade to `GenericBlock` with class hints and diagnostics.
+3. [x] Implement HTML emitter for faithful structural output from IR.
+   - `src/emitters/html.rs` (spec §5.2 mapping, HTML-escaped, Strong/Em/Del
+     style mapping matched to the parser's inverse); wired to `Format::Html`
+     in `Library::emit` and CLI `--format html`.
+4. [x] Add cross-format tests:
+   - [x] html -> IR -> markdown (with structural-equivalence reparse gate)
+   - [x] markdown -> IR -> html (`tests/cross_format.rs`, structural-equivalence gate)
+   - [x] structural equivalence checks where semantically valid
+     (`structural_diff_bodies` + realistic fixture pages + rich md fixture)
+5. [x] Add URL-source path validation (`Source::Url`) and metadata/title extraction tests.
+   - `src/net/` blocking `reqwest` fetch (redirects, content-type→parser
+     sniffing with extension/body fallback, typed `Error::Network`); wired
+     into `Library::ingest` and CLI `http(s)://` args; hermetic loopback-server
+     tests in `tests/url_ingest.rs`. `<title>`/`<h1>`/`og:title` extraction
+     covered by `tests/html_ingest.rs`.
 
 ## Phase 4 — Persistence, Chunking, Embeddings, Vector Retrieval
 
@@ -104,10 +118,20 @@ This section is the single status source for the roadmap. (`NEXT_BUILD_PUSH.md`
 was retired in the 2026-07-06 cleanup; per-push task specs now live in
 `docs/full-scope-audit-2026-07-06.md`.)
 
-- **Current truth:** Markdown parser/emitter and IR roundtrip harness are complete.
-- **Phase 2B state:** **complete**. The Phase 2B exit checklist command in `docs/phase-gates.md` is green in the current revision (`cargo test --test markdown_roundtrip --test cli_smoke_contract`).
-- **Exact next focus:** **Phase 3** implementation work (HTML parser/emitter + cross-format integrity), while continuing cross-phase quality gates in parallel.
-- **Immediate next phase after gate closure:** Phase 3 — HTML parser/emitter + cross-format integrity.
+- **Current truth:** Markdown + HTML **parsers and emitters** complete, with
+  bidirectional cross-format equivalence gates (html↔markdown via
+  `structural_diff_bodies`); shared `SectionPathTracker` across parsers;
+  trait surfaces for Phase 4/5 frozen; content-hash ingest dedupe live;
+  provenance byte ranges in original-source coordinates.
+- **Phase 2B state:** complete (gate command green).
+- **Phase 3 state:** **complete** (audit Tasks 2, 3 & 4 done — HTML
+  parse/emit, both cross-format gates, and URL ingestion).
+- **Exact next focus:** the Phase-4 track — Tasks 5/6/8 (plaintext emitter,
+  SQLite store, embedder+index) are unblocked and parallelizable, feeding
+  Task 7 (chunker) and Task 9 (query/context pipeline). This is the half that
+  makes documents actually *searchable*.
+- **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
+  scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).
 - **Normalization policy reference:** `docs/normalization-deltas.md` (acceptable parse/emit deltas vs semantic regressions).
-- **Cross-phase quality gates still open:** all items under **Cross-Phase Quality Gates** remain active and continue as parallel quality work across Phases 2B/3+.
+- **Cross-phase quality gates still open:** all items under **Cross-Phase Quality Gates** remain active and continue as parallel quality work across Phases 3+.

@@ -3,6 +3,15 @@ use super::types::{Block, BlockNode, Document, Inline};
 /// Normalize a document in place: merges adjacent `Inline::Text` nodes and
 /// strips empty `Inline::Text("")` values. Recurses through all block/inline
 /// structure. Provenance is not modified.
+///
+/// This normalizer is **whitespace-agnostic by design** — it never collapses
+/// or trims whitespace. That is what lets `structural_diff` treat markdown IR
+/// and HTML IR as equivalent: both sides get the same merge/drop treatment,
+/// and whitespace differences that survive parsing are compared literally.
+/// It is distinct from the HTML parser's parse-time `finalize_inlines`, which
+/// *does* collapse and trim whitespace as part of stripping HTML formatting.
+/// Do not add whitespace handling here without revisiting cross-format
+/// equivalence.
 pub fn normalize_document(doc: &mut Document) {
     for node in &mut doc.body {
         normalize_block_node(node);
