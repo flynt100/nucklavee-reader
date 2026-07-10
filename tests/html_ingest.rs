@@ -413,7 +413,8 @@ fn library_ingests_raw_html_and_emits_markdown() {
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
         NoopEmbedder,
-    );
+    )
+    .expect("build library");
     let id = lib
         .ingest(Source::RawHtml(
             "<html><head><title>T</title></head><body><main><h1>T</h1><p>hello <strong>world</strong></p></main></body></html>".into(),
@@ -431,7 +432,8 @@ fn library_ingests_html_file_by_extension() {
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
         NoopEmbedder,
-    );
+    )
+    .expect("build library");
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/html/blog_post.html");
     let id = lib.ingest(Source::File(path)).expect(".html file ingest");
     let markdown = lib.emit(id, Format::Markdown).expect("markdown emit");
@@ -445,7 +447,8 @@ fn library_rejects_unsupported_extension_with_contract_message() {
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
         NoopEmbedder,
-    );
+    )
+    .expect("build library");
     let err = lib
         .ingest(Source::File("notes.docx".into()))
         .expect_err("docx must be rejected");
@@ -453,7 +456,7 @@ fn library_rejects_unsupported_extension_with_contract_message() {
         err.to_string(),
         format!(
             "invalid input: {}",
-            nucklavee::phase2_contract::unsupported_extension_message("docx")
+            nucklavee::contract::unsupported_extension_message("docx")
         )
     );
 }

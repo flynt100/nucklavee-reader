@@ -88,7 +88,8 @@ fn library_emits_html_format() {
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
         NoopEmbedder,
-    );
+    )
+    .expect("build library");
     let id = lib
         .ingest(Source::RawMarkdown("# Title\n\nbody **b**\n".into()))
         .expect("ingest");

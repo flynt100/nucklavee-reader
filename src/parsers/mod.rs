@@ -2,9 +2,8 @@
 //!
 //! There is deliberately **no cross-format `Parser` trait** (frozen
 //! 2026-07-06; see `docs/ir-deltas-from-spec.md`): parse options are
-//! format-specific, so each format exposes free functions and/or a struct
-//! with inherent methods. Re-introduce a trait only when a real cross-format
-//! abstraction is needed.
+//! format-specific, so each format exposes a free `parse_*` function. The PDF
+//! parser (`parsers::pdf`) arrives in Phase 6.
 
 use sha2::{Digest, Sha256};
 
@@ -12,7 +11,6 @@ use crate::ir::Inline;
 
 pub mod html;
 pub mod markdown;
-pub mod pdf;
 
 /// Default confidence for a `GenericBlock` produced when a parser cannot
 /// classify content with certainty (HTML unknown elements, markdown TSV

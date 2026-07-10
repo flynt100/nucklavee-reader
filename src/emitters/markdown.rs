@@ -12,19 +12,8 @@
 //! - emphasis `*`, strong `**`, strikethrough `~~`
 //! - hard line break: two trailing spaces + `\n`
 
-use crate::Result;
-use crate::emitters::Emitter;
 use crate::ir::{Block, BlockNode, Document, Inline, Style};
 use crate::parsers::markdown::math::looks_like_math_inline;
-
-#[derive(Debug, Default, Clone)]
-pub struct MarkdownEmitter;
-
-impl Emitter for MarkdownEmitter {
-    fn emit(&self, document: &Document) -> Result<String> {
-        Ok(emit_markdown(document))
-    }
-}
 
 pub fn emit_markdown(document: &Document) -> String {
     let mut out = String::new();

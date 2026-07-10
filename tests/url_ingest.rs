@@ -116,7 +116,8 @@ fn library_ingests_url_and_preserves_final_url_as_provenance() {
         InMemoryDocumentStore::default(),
         NoopVectorIndex,
         NoopEmbedder,
-    );
+    )
+    .expect("build library");
 
     let id = match lib.ingest(Source::Url(url.clone())) {
         Ok(id) => id,

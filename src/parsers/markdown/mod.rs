@@ -51,16 +51,6 @@ use preparse::{
     normalize_preparse_input,
 };
 
-#[derive(Debug, Default, Clone)]
-pub struct MarkdownParser;
-
-impl MarkdownParser {
-    /// Convenience wrapper over [`parse_markdown`] with default options.
-    pub fn parse(&self, input: &str) -> Document {
-        parse_markdown(input, ParseOptions::default())
-    }
-}
-
 /// Parser options. Phase 1 exposes only the source descriptor; defaults are
 /// sufficient for pure-string parsing.
 #[derive(Debug, Clone, Default)]

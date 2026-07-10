@@ -1,9 +1,6 @@
-use crate::Result;
-use crate::ir::Document;
-
-pub trait Emitter {
-    fn emit(&self, document: &Document) -> Result<String>;
-}
+//! Output emitters. Each format exposes a free `emit_*` function that walks the
+//! IR; there is no `Emitter` trait, because the `Library` dispatches on the
+//! `Format` enum and nothing needs polymorphic emission.
 
 pub mod html;
 pub mod markdown;

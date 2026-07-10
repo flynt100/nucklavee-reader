@@ -62,25 +62,29 @@ In short: **normalize anything, preserve structure, and make it searchable.**
   chunks, prose accumulates, and oversized content is split within a token
   budget (tiktoken cl100k_base). Stored IR is canonicalized at ingest so
   chunking is consistent across source formats.
-- **Embeddings + vector search primitives**: an `ApiEmbedder` (OpenAI-compatible
+- **End-to-end semantic search** (Task 9): `ingest` runs the full pipeline —
+  parse → validate → canonicalize → store → chunk → embed → index —, `query`
+  embeds a question and returns the nearest chunks ranked with provenance, and
+  `context_window` packs ranked chunks into a token-budgeted string with
+  `[Source: title > section]` headers for LLM consumption (spec §7.3).
+- **Embeddings + vector search backends**: an `ApiEmbedder` (OpenAI-compatible
   `/v1/embeddings`, blocking) and a `UsearchIndex` (cosine HNSW via `usearch`)
-  with add/search/remove and file persistence. Not yet wired into an
-  end-to-end `query` — that is Task 9.
+  with add/search/remove and file persistence.
 - **CLI**: `ingest` / `ingest-emit` over `.md`, `.html`, `.htm` files or
   `http(s)://` URLs, emitting `markdown` or `html`, with locked boundary
   errors for everything else.
 
 ## What Is Not Implemented Yet
 
-- The end-to-end query/context-window pipeline that wires ingest → chunk →
-  embed → index → search (Task 9). Every building block (store, chunker,
-  embedder, vector index) exists and is tested; they are not yet connected
-  into `query`/`context_window`, which still return "not implemented" errors.
+- The full spec §8 CLI command set (`search`, `list`, `info`, `context`,
+  `remove`, config file) — Task 10. The library performs semantic search end
+  to end today, but the CLI still only exposes `ingest`/`ingest-emit`.
+- PDF ingestion (Tasks 11–12).
 - Full CLI command set (`search`, `list`, `info`, `context`, `remove` — Task 10)
 - PDF pipeline (Tasks 11–12)
 
 Remaining unimplemented paths return explicit, tested `not implemented` /
-`invalid input` errors (see `docs/cli-phase2-boundary.md`).
+`invalid input` errors (see `docs/cli.md`).
 
 ## Implementation Order
 
@@ -95,9 +99,9 @@ Per-task scopes, guardrails, and acceptance criteria live in
 6. ~~Task 5 — PlainText emitter~~ ✅
 7. ~~Task 6 — SQLite store~~ ✅ · ~~Task 8 — embedder + vector index~~ ✅
 8. ~~Task 7 — structure-aware chunker~~ ✅
-9. Task 9 — pipeline wiring + `query` + `context_window` (**next**)
-10. Task 10 — CLI rework
-11. Tasks 11–12 — PDF pipeline
+9. ~~Task 9 — pipeline wiring + `query` + `context_window`~~ ✅ **(Phase 4 complete)**
+10. ~~Task 10 — CLI rework (spec §8 command set)~~ ✅
+11. Tasks 11–12 — PDF pipeline (**next**)
 
 ## Development
 
@@ -115,27 +119,29 @@ cargo test
 
 ### CLI usage
 
+The CLI is a persistent library backed by SQLite + a usearch index, configured
+by a TOML file (`--config`, default `~/.config/forge/config.toml`). Ingest in
+one invocation is searchable in the next.
+
 ```bash
-# Markdown roundtrip
-cargo run --bin nucklavee -- ingest-emit tests/corpus/electromagnetic-valence.md --format markdown
+# Ingest a file or a URL (parse → store → chunk → embed → index)
+cargo run --bin nucklavee -- ingest ./notes/valence.md
+cargo run --bin nucklavee -- ingest https://example.com/article
 
-# HTML → markdown (content extraction + DOM→IR mapping)
-cargo run --bin nucklavee -- ingest-emit tests/fixtures/html/docs_site.html --format markdown
+# Semantic search and LLM context assembly
+cargo run --bin nucklavee -- search "valence in semiconductors" --limit 5
+cargo run --bin nucklavee -- context "how does valence affect conductivity" --budget 1500
 
-# Either source → HTML
-cargo run --bin nucklavee -- ingest-emit tests/fixtures/06_headings.md --format html
-
-# Fetch a URL and emit it as markdown (HTML vs Markdown auto-detected)
-cargo run --bin nucklavee -- ingest-emit https://example.com/page --format markdown
+# Convert, inspect, manage
+cargo run --bin nucklavee -- emit <document-id> html
+cargo run --bin nucklavee -- list --json
+cargo run --bin nucklavee -- info <document-id>
+cargo run --bin nucklavee -- remove <document-id>
 ```
 
-`--format` supports `markdown`, `html`, and `text`.
-If another format is passed, the CLI/runtime error string is:
-`unsupported format '<value>'. supported: markdown, html, text`.
-
-Document IDs are process-local (in-memory store); use `ingest-emit` for
-reliable single-process behavior. For the complete command boundary and
-behavior matrix, see `docs/cli-phase2-boundary.md`.
+`emit` formats: `markdown`, `html`, `text`. `ingest`/`search`/`context`
+require a configured embedding endpoint. See `docs/cli.md` for the full
+command reference and config schema.
 
 ## Reference Docs
 
@@ -144,4 +150,4 @@ behavior matrix, see `docs/cli-phase2-boundary.md`.
 - `docs/full-scope-audit-2026-07-06.md` (audit + per-task build plan)
 - `docs/phase-gates.md` (phase exit criteria and blocker vs warning policy)
 - `docs/normalization-deltas.md` (allowed markdown parse/emit deltas vs semantic regressions)
-- `docs/cli-phase2-boundary.md` (CLI command boundary and behavior matrix)
+- `docs/cli.md` (CLI command reference and config schema)

@@ -101,18 +101,33 @@ Primary goal: make ingestion/search functional end-to-end over stored chunks.
    - `UsearchIndex` (cosine HNSW) with a UUID⇆u64 keymap + JSON sidecar for
      `save`/`load`; add/search/remove/persistence tests in
      `tests/vector_usearch.rs`.
-5. [ ] Wire pipeline: ingest -> parse -> validate/canonicalize -> store -> chunk -> embed -> index. *(audit Task 9)*
-6. [ ] Implement ranked semantic query returning chunks with provenance. *(audit Task 9)*
+5. [x] Wire pipeline: ingest -> parse -> validate/canonicalize -> store -> chunk -> embed -> index (audit Task 9).
+6. [x] Implement ranked semantic query returning chunks with provenance (audit Task 9).
+   - `Library::query` (embed → index search → store join) and
+     `context_window` (spec §7.3 greedy packing with `[Source: title >
+     section]` headers, header tokens counted, title de-duplicated against the
+     H1 in the section path). End-to-end `tests/pipeline.rs` with a real
+     usearch index + deterministic `HashEmbedder`. Dead `IngestionPipeline`
+     and `ContextAssembler` scaffold structs removed (behavior lives on
+     `Library`).
 
-## Phase 5 — CLI Command Wiring and Operator UX
+## Phase 5 — CLI Command Wiring and Operator UX (audit Task 10) — DONE
 
 Primary goal: expose library capabilities via stable CLI workflows.
 
-1. [ ] Replace scaffold CLI with subcommands (`ingest`, `query`, `emit`, `context-window`).
-2. [ ] Add source format flags/input mode handling (file/url/raw text).
-3. [ ] Add output format controls and machine-readable output option for automation.
-4. [ ] Add CLI-level error mapping and actionable diagnostics.
-5. [ ] Add smoke tests for core CLI flows.
+1. [x] Replace scaffold CLI with the spec §8 command set: `ingest`, `search`,
+   `emit`, `list`, `info`, `context`, `remove`.
+2. [x] Source/input handling: file (`.md`/`.html`/`.htm`) and `http(s)://` URL,
+   auto-detected.
+3. [x] Output format controls (`emit <id> <format>`) + `--json` machine output.
+4. [x] Config file (`--config`, default `~/.config/forge/config.toml`) for the
+   SQLite database, vector index, and embedding endpoint; actionable errors.
+5. [x] Smoke tests for every subcommand against a temp SQLite db + a loopback
+   mock embedding server (`tests/cli.rs`).
+
+The Phase-2 CLI boundary was retired: `phase2_contract` renamed to `contract`
+(dead constants pruned), `cli_smoke_contract.rs`/`phase2_contract.rs` tests
+removed, `docs/cli-phase2-boundary.md` replaced by `docs/cli.md`.
 
 ## Phase 6 — PDF Pipeline (Iterative Heuristics)
 
@@ -148,12 +163,15 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
 - **Phase 2B state:** complete (gate command green).
 - **Phase 3 state:** **complete** (audit Tasks 2, 3 & 4 done — HTML
   parse/emit, both cross-format gates, and URL ingestion).
-- **Exact next focus:** **Task 9 — the pipeline that wires
-  ingest→chunk→embed→index and implements `query` + `context_window`.** All
-  of its building blocks now exist and are individually tested: stores (Task
-  6), plaintext rendering (Task 5), chunker (Task 7), embedder + vector index
-  (Task 8). Task 9 is the point Nucklavee first performs semantic search end
-  to end. Stored IR is canonicalized at ingest (decision: normalize-at-ingest).
+- **Phase 4 is complete** (Tasks 5–9): storage, chunking, embeddings, vector
+  retrieval, and the end-to-end `ingest → chunk → embed → index` pipeline with
+  `query` + `context_window`. Nucklavee now performs semantic search end to
+  end at the library level.
+- **Phases 1–5 are complete.** The library and CLI perform ingest (md/html/
+  url) → convert (md/html/text) → chunk → embed → index → semantic search →
+  context assembly, end to end, over persistent SQLite + usearch storage.
+- **Exact next focus:** **Phase 6 — the PDF pipeline (audit Tasks 11–12)**,
+  pending a comprehensive last-pass review before greenlighting.
 - **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).

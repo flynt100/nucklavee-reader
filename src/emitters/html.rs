@@ -10,18 +10,7 @@
 //! markdown → IR → html → IR round-trips structurally:
 //! Strong→`<strong>`, Emphasis→`<em>`, Strikethrough→`<del>`.
 
-use crate::Result;
-use crate::emitters::Emitter;
 use crate::ir::{Block, BlockNode, Document, Inline, ListItem, Style};
-
-#[derive(Debug, Default, Clone)]
-pub struct HtmlEmitter;
-
-impl Emitter for HtmlEmitter {
-    fn emit(&self, document: &Document) -> Result<String> {
-        Ok(emit_html(document))
-    }
-}
 
 /// Emit a document's body as an HTML fragment.
 pub fn emit_html(document: &Document) -> String {

@@ -20,14 +20,6 @@ impl ByteRange {
     pub fn is_valid_within(&self, source_len: usize) -> bool {
         self.start <= self.end && self.end <= source_len
     }
-
-    pub fn len(&self) -> usize {
-        self.end.saturating_sub(self.start)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.start >= self.end
-    }
 }
 
 /// Provenance recorded for each parsed block.
