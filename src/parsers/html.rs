@@ -68,8 +68,18 @@ const SKIP_TAGS: &[&str] = &[
 
 /// Wrapper elements that are structurally transparent at block level.
 const TRANSPARENT_BLOCK_TAGS: &[&str] = &[
-    "div", "section", "article", "main", "body", "html", "figure", "figcaption", "details",
-    "summary", "dl", "hgroup",
+    "div",
+    "section",
+    "article",
+    "main",
+    "body",
+    "html",
+    "figure",
+    "figcaption",
+    "details",
+    "summary",
+    "dl",
+    "hgroup",
 ];
 
 /// Container tags the density-descent heuristic is allowed to descend into.
@@ -256,8 +266,29 @@ fn content_text_len(el: ElementRef<'_>) -> usize {
 // --- block walk ----------------------------------------------------------
 
 const BLOCK_TAGS: &[&str] = &[
-    "h1", "h2", "h3", "h4", "h5", "h6", "p", "pre", "table", "ul", "ol", "blockquote", "hr",
-    "dt", "dd", "li", "tr", "td", "th", "thead", "tbody", "tfoot", "caption",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p",
+    "pre",
+    "table",
+    "ul",
+    "ol",
+    "blockquote",
+    "hr",
+    "dt",
+    "dd",
+    "li",
+    "tr",
+    "td",
+    "th",
+    "thead",
+    "tbody",
+    "tfoot",
+    "caption",
 ];
 
 fn is_transparent_block(name: &str) -> bool {
@@ -480,7 +511,13 @@ fn table_block(el: ElementRef<'_>, ctx: &mut Ctx) -> Option<Block> {
     let mut body_rows: Vec<Vec<Vec<Inline>>> = Vec::new();
     let mut saw_span_attr = false;
 
-    collect_table_rows(el, &mut header_rows, &mut body_rows, &mut saw_span_attr, ctx);
+    collect_table_rows(
+        el,
+        &mut header_rows,
+        &mut body_rows,
+        &mut saw_span_attr,
+        ctx,
+    );
 
     if saw_span_attr {
         ctx.report_once(
@@ -497,8 +534,7 @@ fn table_block(el: ElementRef<'_>, ctx: &mut Ctx) -> Option<Block> {
             ctx.report_once(
                 "table-multi-head".to_string(),
                 DiagnosticKind::Lossy,
-                "table had multiple header rows; only the first was kept as the header"
-                    .to_string(),
+                "table had multiple header rows; only the first was kept as the header".to_string(),
             );
             let extra: Vec<_> = header_rows.drain(1..).collect();
             body_rows.splice(0..0, extra);

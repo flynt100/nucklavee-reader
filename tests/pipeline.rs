@@ -3,11 +3,11 @@
 //! deterministic offline `HashEmbedder` so ranking is meaningful without a
 //! network or model.
 
+use nucklavee::Library;
 use nucklavee::ir::Source;
 use nucklavee::storage::memory::InMemoryDocumentStore;
 use nucklavee::test_support::HashEmbedder;
 use nucklavee::vector::usearch::UsearchIndex;
-use nucklavee::Library;
 
 const DIM: usize = 256;
 
@@ -44,7 +44,9 @@ fn query_retrieves_the_most_relevant_section() {
     let mut lib = library();
     lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest");
 
-    let results = lib.query("crunchy sweet red fruit orchard cider", 3).expect("query");
+    let results = lib
+        .query("crunchy sweet red fruit orchard cider", 3)
+        .expect("query");
     assert!(!results.is_empty(), "expected search hits");
     assert!(
         results[0].content.to_lowercase().contains("apples"),
@@ -83,13 +85,22 @@ fn context_window_packs_ranked_chunks_with_provenance_headers() {
         .context_window("ocean salt water tides moon planet", 500)
         .expect("context window");
 
-    assert!(ctx.contains("[Source: Field Guide > Oceans]"), "missing provenance header:\n{ctx}");
-    assert!(ctx.contains("salt water"), "missing retrieved content:\n{ctx}");
+    assert!(
+        ctx.contains("[Source: Field Guide > Oceans]"),
+        "missing provenance header:\n{ctx}"
+    );
+    assert!(
+        ctx.contains("salt water"),
+        "missing retrieved content:\n{ctx}"
+    );
     // The most relevant section is packed first.
     let oceans_at = ctx.find("Oceans").expect("oceans present");
     let apples_at = ctx.find("Apples");
     if let Some(apples_at) = apples_at {
-        assert!(oceans_at < apples_at, "oceans should be packed before apples:\n{ctx}");
+        assert!(
+            oceans_at < apples_at,
+            "oceans should be packed before apples:\n{ctx}"
+        );
     }
 }
 
@@ -98,25 +109,44 @@ fn context_window_respects_token_budget() {
     let mut lib = library();
     lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest");
 
-    let big = lib.context_window("fruit water rust", 1000).expect("big ctx");
-    let tiny = lib.context_window("fruit water rust", 20).expect("tiny ctx");
+    let big = lib
+        .context_window("fruit water rust", 1000)
+        .expect("big ctx");
+    let tiny = lib
+        .context_window("fruit water rust", 20)
+        .expect("tiny ctx");
 
-    assert!(tiny.len() < big.len(), "a tiny budget must produce less output");
+    assert!(
+        tiny.len() < big.len(),
+        "a tiny budget must produce less output"
+    );
     // A budget of zero yields nothing.
-    assert!(lib.context_window("fruit", 0).expect("zero budget").is_empty());
+    assert!(
+        lib.context_window("fruit", 0)
+            .expect("zero budget")
+            .is_empty()
+    );
 }
 
 #[test]
 fn dedupe_does_not_double_index() {
     let mut lib = library();
-    let a = lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest 1");
-    let b = lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest 2 (dupe)");
+    let a = lib
+        .ingest(Source::RawMarkdown(DOC.into()))
+        .expect("ingest 1");
+    let b = lib
+        .ingest(Source::RawMarkdown(DOC.into()))
+        .expect("ingest 2 (dupe)");
     assert_eq!(a, b, "identical content dedupes to one document");
 
     // Still exactly one document's worth of chunks retrievable.
     let results = lib.query("apples crunchy red", 10).expect("query");
     let doc_ids: std::collections::HashSet<_> = results.iter().map(|c| c.document_id).collect();
-    assert_eq!(doc_ids.len(), 1, "results come from a single deduped document");
+    assert_eq!(
+        doc_ids.len(),
+        1,
+        "results come from a single deduped document"
+    );
 }
 
 // --- reliability regression scenarios (external review, 2026-07-13) ---------
@@ -186,13 +216,12 @@ fn failed_embedding_leaves_no_partial_document_and_retry_succeeds() {
         .expect("retry succeeds");
     assert_eq!(store.list_documents().expect("list").len(), 1);
     assert!(
-        !store
-            .get_chunks_by_document(id)
-            .expect("chunks")
-            .is_empty(),
+        !store.get_chunks_by_document(id).expect("chunks").is_empty(),
         "retry stores the complete projection"
     );
-    let hits = lib.query("crunchy sweet red fruit orchard", 3).expect("query");
+    let hits = lib
+        .query("crunchy sweet red fruit orchard", 3)
+        .expect("query");
     assert!(!hits.is_empty(), "retried document is searchable");
 }
 
@@ -252,7 +281,9 @@ fn same_content_different_options_reprocesses_with_stable_identity() {
     );
 
     // Search reflects the new projection, not stale vectors.
-    let hits = lib.query("crunchy sweet red fruit orchard", 5).expect("query");
+    let hits = lib
+        .query("crunchy sweet red fruit orchard", 5)
+        .expect("query");
     assert!(!hits.is_empty());
     let doc_chunks: std::collections::HashSet<_> = store
         .get_chunks_by_document(first)
@@ -358,9 +389,7 @@ fn oversized_first_result_does_not_starve_later_results() {
     .expect("ingest");
 
     // Budget fits the small chunk but not the big one.
-    let ctx = lib
-        .context_window(ocean_words, 60)
-        .expect("context window");
+    let ctx = lib.context_window(ocean_words, 60).expect("context window");
     assert!(
         !ctx.is_empty(),
         "an oversized top result must not force an empty context"
@@ -446,7 +475,9 @@ fn missing_title_renders_as_untitled() {
     ))
     .expect("ingest");
 
-    let ctx = lib.context_window("kelp forest paragraph", 300).expect("ctx");
+    let ctx = lib
+        .context_window("kelp forest paragraph", 300)
+        .expect("ctx");
     assert!(
         ctx.contains("[Source: untitled]"),
         "missing title is ordinary data and falls back to 'untitled':\n{ctx}"
@@ -488,7 +519,8 @@ fn changing_embedding_model_at_same_dimension_triggers_reprocessing() {
             },
         )
         .expect("build");
-        lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest a")
+        lib.ingest(Source::RawMarkdown(DOC.into()))
+            .expect("ingest a")
     };
     let fingerprint_a = store
         .get_document(first)
@@ -509,7 +541,8 @@ fn changing_embedding_model_at_same_dimension_triggers_reprocessing() {
             },
         )
         .expect("build");
-        lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest b")
+        lib.ingest(Source::RawMarkdown(DOC.into()))
+            .expect("ingest b")
     };
     assert_eq!(first, second, "reprocessing keeps a stable document id");
     let fingerprint_b = store
@@ -574,7 +607,10 @@ struct MalformedEmbedder {
 
 impl Embedder for MalformedEmbedder {
     fn embed(&self, texts: &[&str]) -> nucklavee::Result<Vec<Vec<f32>>> {
-        Ok(texts.iter().map(|_| (self.poison)(self.dimension)).collect())
+        Ok(texts
+            .iter()
+            .map(|_| (self.poison)(self.dimension))
+            .collect())
     }
     fn dimension(&self) -> usize {
         self.dimension

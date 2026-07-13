@@ -4,8 +4,8 @@
 
 mod config;
 
-use std::process::ExitCode;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use serde::Serialize;
@@ -195,7 +195,11 @@ fn cmd_list(lib: &Lib, json: bool) -> Result<()> {
         println!("(no documents)");
     }
     for meta in &docs {
-        println!("{}\t{}", meta.id, meta.title.as_deref().unwrap_or("(untitled)"));
+        println!(
+            "{}\t{}",
+            meta.id,
+            meta.title.as_deref().unwrap_or("(untitled)")
+        );
     }
     Ok(())
 }

@@ -108,7 +108,9 @@ fn conformance<S: DocumentStore>(store: S) {
     let after = store.get_chunks_by_document(d1.meta.id).expect("after");
     assert_eq!(after.len(), 2, "old generation fully retired");
     assert!(
-        after.iter().all(|c| new_chunks.iter().any(|n| n.id == c.id)),
+        after
+            .iter()
+            .all(|c| new_chunks.iter().any(|n| n.id == c.id)),
         "only the new generation remains"
     );
     assert_eq!(
@@ -121,7 +123,10 @@ fn conformance<S: DocumentStore>(store: S) {
     store
         .replace_document_projection(&d1, &new_chunks, &new_embeddings)
         .expect("idempotent replay");
-    assert_eq!(store.get_chunks_by_document(d1.meta.id).expect("x").len(), 2);
+    assert_eq!(
+        store.get_chunks_by_document(d1.meta.id).expect("x").len(),
+        2
+    );
     assert_eq!(store.list_documents().expect("list").len(), 2);
 
     // empty replacement removes the previous chunk set
@@ -147,11 +152,7 @@ fn conformance<S: DocumentStore>(store: S) {
     let dup_b = chunk_for(d1.meta.id, 0);
     dup_a.sequence_index = 0;
     let err = store
-        .replace_document_projection(
-            &d1,
-            &[dup_a, dup_b],
-            &[embedding_for(0), embedding_for(1)],
-        )
+        .replace_document_projection(&d1, &[dup_a, dup_b], &[embedding_for(0), embedding_for(1)])
         .expect_err("duplicate sequence must be rejected");
     assert!(matches!(err, nucklavee::Error::Consistency(_)), "got {err}");
 

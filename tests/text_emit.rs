@@ -32,7 +32,10 @@ fn strips_all_markdown_formatting_markers() {
         );
     }
     // Heading text is uppercased.
-    assert!(text.contains("CROSS-FORMAT FIXTURE"), "missing uppercased H1:\n{text}");
+    assert!(
+        text.contains("CROSS-FORMAT FIXTURE"),
+        "missing uppercased H1:\n{text}"
+    );
     // A link renders as `text (url)`.
     assert!(
         text.contains("link (https://example.com/path)"),
@@ -74,7 +77,10 @@ fn html_source_also_renders_to_plain_text() {
 
     assert!(text.contains("CONFIGURING THE WIDGET ENGINE"));
     assert!(!text.contains("<"), "no html tags should survive:\n{text}");
-    assert!(!text.contains("NAVLINK"), "chrome must stay stripped:\n{text}");
+    assert!(
+        !text.contains("NAVLINK"),
+        "chrome must stay stripped:\n{text}"
+    );
     assert!(
         text.lines().any(|l| l.starts_with("    widgetctl install")),
         "expected indented code from html source:\n{text}"

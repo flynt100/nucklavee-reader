@@ -32,7 +32,8 @@ pub struct SqliteDocumentStore {
 
 impl std::fmt::Debug for SqliteDocumentStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SqliteDocumentStore").finish_non_exhaustive()
+        f.debug_struct("SqliteDocumentStore")
+            .finish_non_exhaustive()
     }
 }
 
@@ -188,8 +189,11 @@ impl DocumentStore for SqliteDocumentStore {
             params![id.to_string()],
         )
         .map_err(sqlite_err)?;
-        tx.execute("DELETE FROM documents WHERE id = ?1", params![id.to_string()])
-            .map_err(sqlite_err)?;
+        tx.execute(
+            "DELETE FROM documents WHERE id = ?1",
+            params![id.to_string()],
+        )
+        .map_err(sqlite_err)?;
         tx.commit().map_err(sqlite_err)?;
         Ok(())
     }
@@ -281,9 +285,7 @@ impl DocumentStore for SqliteDocumentStore {
     fn get_chunks_by_document(&self, id: DocumentId) -> Result<Vec<Chunk>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
-                "SELECT chunk_json FROM chunks WHERE document_id = ?1 ORDER BY sequence_index",
-            )
+            .prepare("SELECT chunk_json FROM chunks WHERE document_id = ?1 ORDER BY sequence_index")
             .map_err(sqlite_err)?;
         let rows = stmt
             .query_map(params![id.to_string()], |row| row.get::<_, String>(0))
@@ -301,8 +303,7 @@ impl DocumentStore for SqliteDocumentStore {
             return Ok(Vec::new());
         }
         let conn = self.lock()?;
-        let mut by_id: std::collections::HashMap<ChunkId, Chunk> =
-            std::collections::HashMap::new();
+        let mut by_id: std::collections::HashMap<ChunkId, Chunk> = std::collections::HashMap::new();
         let mut stmt = conn
             .prepare("SELECT chunk_json FROM chunks WHERE id = ?1")
             .map_err(sqlite_err)?;

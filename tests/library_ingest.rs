@@ -67,13 +67,21 @@ fn emits_all_three_supported_formats() {
         .ingest(Source::RawMarkdown("# title\n\nbody\n".into()))
         .expect("ingest");
 
-    assert!(lib.emit(id, Format::Markdown).expect("md").contains("# title"));
+    assert!(
+        lib.emit(id, Format::Markdown)
+            .expect("md")
+            .contains("# title")
+    );
     assert!(
         lib.emit(id, Format::Html)
             .expect("html")
             .contains("<h1>title</h1>")
     );
-    assert!(lib.emit(id, Format::PlainText).expect("text").contains("TITLE"));
+    assert!(
+        lib.emit(id, Format::PlainText)
+            .expect("text")
+            .contains("TITLE")
+    );
 }
 
 #[test]

@@ -75,7 +75,11 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let endpoint = spawn_embedding_server();
-        let dir = std::env::temp_dir().join(format!("nucklavee_cli_{}_{}", std::process::id(), Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!(
+            "nucklavee_cli_{}_{}",
+            std::process::id(),
+            Uuid::new_v4()
+        ));
         std::fs::create_dir_all(&dir).expect("mkdir");
 
         let db = dir.join("library.sqlite");
@@ -138,28 +142,43 @@ fn full_lifecycle_ingest_list_info_search_context_emit_remove() {
     let (code, out, err) = fx.run(&["ingest", &doc]);
     assert_eq!(code, 0, "ingest failed: {err}");
     let id = out.trim().to_string();
-    assert!(Uuid::parse_str(&id).is_ok(), "ingest should print a UUID, got: {out:?}");
+    assert!(
+        Uuid::parse_str(&id).is_ok(),
+        "ingest should print a UUID, got: {out:?}"
+    );
 
     // list → shows the title
     let (code, out, _) = fx.run(&["list"]);
     assert_eq!(code, 0);
-    assert!(out.contains(&id) && out.contains("Field Guide"), "list output: {out}");
+    assert!(
+        out.contains(&id) && out.contains("Field Guide"),
+        "list output: {out}"
+    );
 
     // info → metadata + chunk count
     let (code, out, err) = fx.run(&["info", &id]);
     assert_eq!(code, 0, "info failed: {err}");
     assert!(out.contains("Field Guide"), "info: {out}");
-    assert!(out.contains("chunks:"), "info should report chunk count: {out}");
+    assert!(
+        out.contains("chunks:"),
+        "info should report chunk count: {out}"
+    );
 
     // search → retrieves chunks with provenance
     let (code, out, err) = fx.run(&["search", "crunchy red apples", "--limit", "5"]);
     assert_eq!(code, 0, "search failed: {err}");
-    assert!(out.contains("Apples") || out.contains("Oceans"), "search should return results: {out}");
+    assert!(
+        out.contains("Apples") || out.contains("Oceans"),
+        "search should return results: {out}"
+    );
 
     // context → provenance-headed window
     let (code, out, err) = fx.run(&["context", "salt water ocean", "--budget", "500"]);
     assert_eq!(code, 0, "context failed: {err}");
-    assert!(out.contains("[Source: Field Guide"), "context header missing: {out}");
+    assert!(
+        out.contains("[Source: Field Guide"),
+        "context header missing: {out}"
+    );
 
     // emit → markdown
     let (code, out, err) = fx.run(&["emit", &id, "markdown"]);
@@ -167,7 +186,11 @@ fn full_lifecycle_ingest_list_info_search_context_emit_remove() {
     assert!(out.contains("# Field Guide"), "emit markdown: {out}");
 
     // emit → html and text also work
-    assert!(fx.run(&["emit", &id, "html"]).1.contains("<h1>Field Guide</h1>"));
+    assert!(
+        fx.run(&["emit", &id, "html"])
+            .1
+            .contains("<h1>Field Guide</h1>")
+    );
     assert!(fx.run(&["emit", &id, "text"]).1.contains("FIELD GUIDE"));
 
     // remove → gone from the listing
@@ -176,7 +199,10 @@ fn full_lifecycle_ingest_list_info_search_context_emit_remove() {
     assert!(out.contains("removed"), "remove output: {out}");
 
     let (_, out, _) = fx.run(&["list"]);
-    assert!(!out.contains(&id), "document should be gone after remove: {out}");
+    assert!(
+        !out.contains(&id),
+        "document should be gone after remove: {out}"
+    );
 }
 
 #[test]
@@ -191,7 +217,10 @@ fn json_output_is_machine_readable() {
 
     let (_, out, _) = fx.run(&["--json", "list"]);
     let list: serde_json::Value = serde_json::from_str(&out).expect("list --json");
-    assert!(list.as_array().map(|a| !a.is_empty()).unwrap_or(false), "list json: {out}");
+    assert!(
+        list.as_array().map(|a| !a.is_empty()).unwrap_or(false),
+        "list json: {out}"
+    );
 
     let (_, out, _) = fx.run(&["--json", "info", &id]);
     let info: serde_json::Value = serde_json::from_str(&out).expect("info --json");
@@ -238,7 +267,10 @@ fn rebuild_index_recovers_from_a_corrupt_index_file() {
     // The recovery command itself must NOT try to load the corrupt index —
     // it starts empty and repopulates from the store.
     let (code, out, err) = fx.run(&["rebuild-index"]);
-    assert_eq!(code, 0, "rebuild-index must work with a corrupt index: {err}");
+    assert_eq!(
+        code, 0,
+        "rebuild-index must work with a corrupt index: {err}"
+    );
     assert!(out.contains("rebuilt index"), "rebuild output: {out}");
 
     // Search works again, against the rebuilt index.

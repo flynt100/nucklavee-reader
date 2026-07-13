@@ -47,7 +47,11 @@ impl DocumentStore for InMemoryDocumentStore {
 
     fn list_documents(&self) -> Result<Vec<DocumentMeta>> {
         let state = self.state()?;
-        Ok(state.documents.values().map(|doc| doc.meta.clone()).collect())
+        Ok(state
+            .documents
+            .values()
+            .map(|doc| doc.meta.clone())
+            .collect())
     }
 
     fn remove_document(&self, id: DocumentId) -> Result<()> {

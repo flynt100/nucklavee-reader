@@ -1,12 +1,12 @@
 //! Nucklavee: universal document transformation library.
 
 pub mod chunking;
+pub mod contract;
 pub mod embedder;
 pub mod emitters;
 pub mod ir;
 pub mod net;
 pub mod parsers;
-pub mod contract;
 pub mod storage;
 /// Test-only stubs and deterministic fakes. Excluded from production builds;
 /// enabled for this crate's own tests via the self dev-dependency.
@@ -104,10 +104,9 @@ where
                         IngestInput::Markdown(read("markdown")?),
                         path.display().to_string(),
                     ),
-                    "html" | "htm" => (
-                        IngestInput::Html(read("html")?),
-                        path.display().to_string(),
-                    ),
+                    "html" | "htm" => {
+                        (IngestInput::Html(read("html")?), path.display().to_string())
+                    }
                     "pdf" => {
                         return Err(contract::not_implemented(
                             contract::PDF_PIPELINE_NOT_IMPLEMENTED,
@@ -120,7 +119,9 @@ where
                     }
                 }
             }
-            Source::RawMarkdown(markdown) => (IngestInput::Markdown(markdown), "raw:markdown".to_string()),
+            Source::RawMarkdown(markdown) => {
+                (IngestInput::Markdown(markdown), "raw:markdown".to_string())
+            }
             Source::RawHtml(html) => (IngestInput::Html(html), "raw:html".to_string()),
             Source::Url(url) => {
                 let fetched = net::fetch(&url)?;

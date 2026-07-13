@@ -30,7 +30,11 @@ fn add_and_search_returns_nearest_first() {
     assert!(!results.is_empty());
     assert_eq!(results[0].0, b, "nearest match should be the axis-1 vector");
     // Cosine distance to itself is ~0.
-    assert!(results[0].1 < 1e-3, "self-distance should be near zero: {}", results[0].1);
+    assert!(
+        results[0].1 < 1e-3,
+        "self-distance should be near zero: {}",
+        results[0].1
+    );
 }
 
 #[test]
@@ -41,7 +45,9 @@ fn dimension_mismatch_is_an_error() {
         .expect_err("wrong-dim add must fail");
     assert!(matches!(err, nucklavee::Error::VectorIndex(_)), "got {err}");
 
-    let err = index.search(&[1.0, 0.0], 1).expect_err("wrong-dim query must fail");
+    let err = index
+        .search(&[1.0, 0.0], 1)
+        .expect_err("wrong-dim query must fail");
     assert!(matches!(err, nucklavee::Error::VectorIndex(_)), "got {err}");
 }
 
@@ -137,7 +143,9 @@ fn repeated_saves_stay_loadable_and_retire_old_generations() {
     index.add(a, one_hot(0)).expect("add");
 
     for round in 0..3 {
-        index.add(Uuid::new_v4(), one_hot(round % 4)).expect("add more");
+        index
+            .add(Uuid::new_v4(), one_hot(round % 4))
+            .expect("add more");
         index.save(&path).expect("repeated save must succeed");
     }
 
@@ -162,7 +170,9 @@ fn corrupt_manifest_is_a_clear_error_pointing_at_rebuild() {
     std::fs::write(&path, b"\x00\x01 not json \xff").expect("write garbage");
 
     let mut index = UsearchIndex::new(4).expect("new");
-    let err = index.load(&path).expect_err("corrupt manifest must fail to load");
+    let err = index
+        .load(&path)
+        .expect_err("corrupt manifest must fail to load");
     let message = err.to_string();
     assert!(
         message.contains("rebuild-index"),
@@ -211,13 +221,14 @@ fn mixed_generation_artifacts_are_rejected() {
         .expect("keymap file");
     let keymap_path = parent.join(&keymap_name);
     let mut keymap: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&keymap_path).expect("read"))
-            .expect("parse");
+        serde_json::from_str(&std::fs::read_to_string(&keymap_path).expect("read")).expect("parse");
     keymap["generation"] = serde_json::Value::String("someothergeneration".into());
     std::fs::write(&keymap_path, keymap.to_string()).expect("write tampered");
 
     let mut index = UsearchIndex::new(4).expect("new");
-    let err = index.load(&path).expect_err("mixed generations must be rejected");
+    let err = index
+        .load(&path)
+        .expect_err("mixed generations must be rejected");
     assert!(
         err.to_string().contains("generation"),
         "error should identify the generation mismatch: {err}"
