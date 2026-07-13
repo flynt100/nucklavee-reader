@@ -104,6 +104,7 @@ fn path_str(path: &Path) -> Result<&str> {
 
 impl VectorIndex for UsearchIndex {
     fn add(&mut self, id: ChunkId, vector: Vec<f32>) -> Result<()> {
+        // Reject every predictable failure *before* mutating valid state.
         if vector.len() != self.dimension {
             return Err(Error::VectorIndex(format!(
                 "vector dimension {} does not match index dimension {}",
@@ -111,19 +112,25 @@ impl VectorIndex for UsearchIndex {
                 self.dimension
             )));
         }
+        if let Some(bad) = vector.iter().find(|v| !v.is_finite()) {
+            return Err(Error::VectorIndex(format!(
+                "vector for chunk {id} contains a non-finite value ({bad})"
+            )));
+        }
+        self.ensure_capacity(1)?;
 
-        // Re-adding an existing id replaces its vector.
+        // Replacement order: commit the new vector first, then retire the old
+        // one — a failed add leaves the previous vector searchable.
+        let key = self.next_key;
+        self.index
+            .add(key, &vector)
+            .map_err(|e| Error::VectorIndex(format!("usearch add failed: {e}")))?;
+        self.next_key += 1;
+
         if let Some(old_key) = self.id_to_key.remove(&id) {
             self.key_to_id.remove(&old_key);
             let _ = self.index.remove(old_key);
         }
-
-        self.ensure_capacity(1)?;
-        let key = self.next_key;
-        self.next_key += 1;
-        self.index
-            .add(key, &vector)
-            .map_err(|e| Error::VectorIndex(format!("usearch add failed: {e}")))?;
         self.key_to_id.insert(key, id);
         self.id_to_key.insert(id, key);
         Ok(())
@@ -165,9 +172,28 @@ impl VectorIndex for UsearchIndex {
         Ok(out)
     }
 
+    fn clear(&mut self) -> Result<()> {
+        self.index = build_index(self.dimension)?;
+        self.key_to_id.clear();
+        self.id_to_key.clear();
+        self.next_key = 0;
+        self.capacity = 0;
+        Ok(())
+    }
+
     fn save(&self, path: &Path) -> Result<()> {
+        // Write both artifacts to temporary paths, then rename into place, so
+        // an interrupted save leaves the previous complete generation intact.
+        let mut index_tmp = path.as_os_str().to_os_string();
+        index_tmp.push(".tmp");
+        let index_tmp = std::path::PathBuf::from(index_tmp);
+        let sidecar_final = Self::sidecar_path(path);
+        let mut sidecar_tmp = sidecar_final.as_os_str().to_os_string();
+        sidecar_tmp.push(".tmp");
+        let sidecar_tmp = std::path::PathBuf::from(sidecar_tmp);
+
         self.index
-            .save(path_str(path)?)
+            .save(path_str(&index_tmp)?)
             .map_err(|e| Error::VectorIndex(format!("usearch save failed: {e}")))?;
 
         let sidecar = KeyMapSidecar {
@@ -177,8 +203,13 @@ impl VectorIndex for UsearchIndex {
         };
         let json = serde_json::to_string(&sidecar)
             .map_err(|e| Error::VectorIndex(format!("keymap serialize failed: {e}")))?;
-        std::fs::write(Self::sidecar_path(path), json)
+        std::fs::write(&sidecar_tmp, json)
             .map_err(|e| Error::VectorIndex(format!("keymap write failed: {e}")))?;
+
+        std::fs::rename(&index_tmp, path)
+            .map_err(|e| Error::VectorIndex(format!("index rename failed: {e}")))?;
+        std::fs::rename(&sidecar_tmp, &sidecar_final)
+            .map_err(|e| Error::VectorIndex(format!("keymap rename failed: {e}")))?;
         Ok(())
     }
 

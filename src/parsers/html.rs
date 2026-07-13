@@ -102,6 +102,7 @@ pub fn parse_html(input: &str, opts: HtmlParseOptions) -> Document {
         frontmatter: None,
         ingested_at: Utc::now(),
         content_hash: sha256_hex(input),
+        processing_fingerprint: String::new(),
     };
 
     let mut doc = Document::new(meta);

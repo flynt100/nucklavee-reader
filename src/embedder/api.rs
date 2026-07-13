@@ -58,12 +58,8 @@ pub struct ApiEmbedder {
 
 impl ApiEmbedder {
     pub fn new(config: ApiEmbedderConfig) -> Result<Self> {
-        let mut builder = reqwest::blocking::Client::builder().timeout(config.timeout);
-        if !config.use_env_proxy {
-            builder = builder.no_proxy();
-        }
-        let client = builder
-            .build()
+        // Shared crate-wide HTTP policy (timeout/proxy); see `crate::net`.
+        let client = crate::net::build_blocking_client(config.timeout, config.use_env_proxy, None)
             .map_err(|e| Error::Embedding(format!("failed to build HTTP client: {e}")))?;
         Ok(Self { config, client })
     }
@@ -111,15 +107,20 @@ impl Embedder for ApiEmbedder {
             .text()
             .map_err(|e| Error::Embedding(format!("failed to read embedding response: {e}")))?;
         if !status.is_success() {
+            // Never place an unbounded provider body into a user-facing error.
             return Err(Error::Embedding(format!(
                 "embedding endpoint returned HTTP {}: {}",
                 status.as_u16(),
-                body.trim()
+                crate::net::truncate_for_diagnostics(body.trim())
             )));
         }
 
-        let parsed: EmbeddingResponse = serde_json::from_str(&body)
-            .map_err(|e| Error::Embedding(format!("failed to parse embedding response: {e}")))?;
+        let parsed: EmbeddingResponse = serde_json::from_str(&body).map_err(|e| {
+            Error::Embedding(format!(
+                "failed to parse embedding response: {e}: {}",
+                crate::net::truncate_for_diagnostics(body.trim())
+            ))
+        })?;
 
         if parsed.data.len() != texts.len() {
             return Err(Error::Embedding(format!(
@@ -129,22 +130,47 @@ impl Embedder for ApiEmbedder {
             )));
         }
 
-        // Order by the provider's `index` so results line up with `texts`.
-        let mut data = parsed.data;
-        data.sort_by_key(|d| d.index);
-
-        let mut out = Vec::with_capacity(data.len());
-        for (i, datum) in data.into_iter().enumerate() {
+        // Validate the provider's `index` fields as a complete permutation of
+        // 0..texts.len(), placing each vector directly into its slot — count
+        // equality alone does not prove correct input↔vector correspondence.
+        let mut ordered: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
+        for datum in parsed.data {
+            if datum.index >= ordered.len() {
+                return Err(Error::Embedding(format!(
+                    "embedding response index {} is out of range for {} inputs",
+                    datum.index,
+                    texts.len()
+                )));
+            }
+            if ordered[datum.index].is_some() {
+                return Err(Error::Embedding(format!(
+                    "embedding response contains duplicate index {}",
+                    datum.index
+                )));
+            }
             if datum.embedding.len() != self.config.dimension {
                 return Err(Error::Embedding(format!(
-                    "embedding {i} has dimension {}, expected {}",
+                    "embedding for input {} has dimension {}, expected {}",
+                    datum.index,
                     datum.embedding.len(),
                     self.config.dimension
                 )));
             }
-            out.push(datum.embedding);
+            if let Some(bad) = datum.embedding.iter().find(|v| !v.is_finite()) {
+                return Err(Error::Embedding(format!(
+                    "embedding for input {} contains a non-finite value ({bad})",
+                    datum.index
+                )));
+            }
+            ordered[datum.index] = Some(datum.embedding);
         }
-        Ok(out)
+
+        // With count equality, no out-of-range, and no duplicates, every slot
+        // is provably filled; the expect is defensive.
+        Ok(ordered
+            .into_iter()
+            .map(|slot| slot.expect("validated permutation covers every slot"))
+            .collect())
     }
 
     fn dimension(&self) -> usize {

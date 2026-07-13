@@ -48,6 +48,7 @@ fn run() -> Result<()> {
         Command::Info { id } => cmd_info(&lib, id, json),
         Command::Context { query, budget } => cmd_context(&lib, &query, budget),
         Command::Remove { id } => cmd_remove(&mut lib, &cfg, id),
+        Command::RebuildIndex => cmd_rebuild_index(&mut lib, &cfg, json),
     }
 }
 
@@ -108,6 +109,9 @@ enum Command {
     },
     /// Remove a document and its chunks from the library.
     Remove { id: DocumentId },
+    /// Rebuild the vector index from stored embeddings (no re-embedding).
+    /// Use after index corruption or loss — the store is authoritative.
+    RebuildIndex,
 }
 
 // --- command handlers -------------------------------------------------------
@@ -223,6 +227,17 @@ fn cmd_remove(lib: &mut Lib, cfg: &Config, id: DocumentId) -> Result<()> {
     lib.remove_document(id)?;
     lib.save_index(&cfg.storage.vector_index)?;
     println!("removed {id}");
+    Ok(())
+}
+
+fn cmd_rebuild_index(lib: &mut Lib, cfg: &Config, json: bool) -> Result<()> {
+    let count = lib.rebuild_index()?;
+    lib.save_index(&cfg.storage.vector_index)?;
+    if json {
+        print_json(&serde_json::json!({ "vectors_indexed": count }))?;
+    } else {
+        println!("rebuilt index with {count} vectors");
+    }
     Ok(())
 }
 
