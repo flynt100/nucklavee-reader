@@ -24,6 +24,12 @@ use crate::chunking::{Chunk, ChunkBlockType, ChunkOptions, Chunker};
 use crate::emitters::text::{emit_text_blocks, render_inlines_plain};
 use crate::ir::{Block, BlockNode, DocumentId, Inline};
 
+/// Version of the chunking algorithm + its tokenizer. Bump on any change
+/// that alters how a given document chunks (grouping, splitting, budgets,
+/// tokenizer swap) — it feeds the ingest `processing_fingerprint`, so a bump
+/// triggers reprocessing instead of reusing stale chunk boundaries.
+pub const CHUNKER_VERSION: &str = "structural1+cl100k_base";
+
 pub struct StructuralChunker {
     bpe: CoreBPE,
 }

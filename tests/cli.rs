@@ -69,6 +69,7 @@ struct Fixture {
     dir: PathBuf,
     config: PathBuf,
     doc: PathBuf,
+    index: PathBuf,
 }
 
 impl Fixture {
@@ -99,7 +100,12 @@ impl Fixture {
         )
         .expect("write config");
 
-        Self { dir, config, doc }
+        Self {
+            dir,
+            config,
+            doc,
+            index,
+        }
     }
 
     fn run(&self, args: &[&str]) -> (i32, String, String) {
@@ -209,6 +215,68 @@ fn unknown_emit_format_is_rejected() {
         err.contains("unsupported format 'rtf'. supported: markdown, html, text"),
         "stderr: {err}"
     );
+}
+
+#[test]
+fn rebuild_index_recovers_from_a_corrupt_index_file() {
+    let fx = Fixture::new();
+    let doc = fx.doc.to_string_lossy().to_string();
+
+    let (code, _, err) = fx.run(&["ingest", &doc]);
+    assert_eq!(code, 0, "ingest failed: {err}");
+
+    // Corrupt the index manifest. Ordinary commands must now fail with a
+    // pointer at the recovery command rather than an opaque load error.
+    std::fs::write(&fx.index, b"\x00corrupted\xff").expect("corrupt index");
+    let (code, _, err) = fx.run(&["search", "apples", "--limit", "3"]);
+    assert_eq!(code, 1, "search against a corrupt index should fail");
+    assert!(
+        err.contains("rebuild-index"),
+        "failure must point at the recovery path: {err}"
+    );
+
+    // The recovery command itself must NOT try to load the corrupt index —
+    // it starts empty and repopulates from the store.
+    let (code, out, err) = fx.run(&["rebuild-index"]);
+    assert_eq!(code, 0, "rebuild-index must work with a corrupt index: {err}");
+    assert!(out.contains("rebuilt index"), "rebuild output: {out}");
+
+    // Search works again, against the rebuilt index.
+    let (code, out, err) = fx.run(&["search", "crunchy red apples", "--limit", "3"]);
+    assert_eq!(code, 0, "search after rebuild failed: {err}");
+    assert!(
+        out.contains("Apples") || out.contains("Oceans"),
+        "search should return results after rebuild: {out}"
+    );
+}
+
+#[test]
+fn rebuild_index_works_when_index_files_are_missing_entirely() {
+    let fx = Fixture::new();
+    let doc = fx.doc.to_string_lossy().to_string();
+
+    let (code, _, err) = fx.run(&["ingest", &doc]);
+    assert_eq!(code, 0, "ingest failed: {err}");
+
+    // Delete every index artifact (manifest + generation files).
+    for entry in std::fs::read_dir(&fx.dir).expect("read dir").flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with("library.usearch") {
+            std::fs::remove_file(entry.path()).expect("remove index artifact");
+        }
+    }
+
+    let (code, out, err) = fx.run(&["--json", "rebuild-index"]);
+    assert_eq!(code, 0, "rebuild-index with no index files failed: {err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("rebuild --json");
+    assert!(
+        v["vectors_indexed"].as_u64().unwrap_or(0) >= 1,
+        "rebuild should re-index stored embeddings: {out}"
+    );
+
+    let (code, out, err) = fx.run(&["search", "salt water ocean", "--limit", "3"]);
+    assert_eq!(code, 0, "search after rebuild failed: {err}");
+    assert!(!out.contains("(no results)"), "results expected: {out}");
 }
 
 #[test]

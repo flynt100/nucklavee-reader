@@ -55,6 +55,10 @@ impl Embedder for NoopEmbedder {
     fn dimension(&self) -> usize {
         8
     }
+
+    fn fingerprint(&self) -> String {
+        "noop|dim=8".to_string()
+    }
 }
 
 /// Deterministic offline embedder: hashes each whitespace-delimited word into
@@ -99,5 +103,9 @@ impl Embedder for HashEmbedder {
 
     fn dimension(&self) -> usize {
         self.dimension
+    }
+
+    fn fingerprint(&self) -> String {
+        format!("hash-bow|v1|dim={}", self.dimension)
     }
 }

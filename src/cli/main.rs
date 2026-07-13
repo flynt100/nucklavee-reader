@@ -34,9 +34,17 @@ fn main() -> ExitCode {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let cfg = Config::load(cli.config.as_deref())?;
-    let mut lib = build_library(&cfg)?;
     let json = cli.json;
 
+    // `rebuild-index` is the recovery path for an index that cannot load, so
+    // it must never itself load the existing index files: it starts from an
+    // empty index and repopulates it from the authoritative store.
+    if matches!(cli.command, Command::RebuildIndex) {
+        let mut lib = build_library(&cfg, false)?;
+        return cmd_rebuild_index(&mut lib, &cfg, json);
+    }
+
+    let mut lib = build_library(&cfg, true)?;
     match cli.command {
         Command::Ingest {
             path,
@@ -48,15 +56,21 @@ fn run() -> Result<()> {
         Command::Info { id } => cmd_info(&lib, id, json),
         Command::Context { query, budget } => cmd_context(&lib, &query, budget),
         Command::Remove { id } => cmd_remove(&mut lib, &cfg, id),
-        Command::RebuildIndex => cmd_rebuild_index(&mut lib, &cfg, json),
+        Command::RebuildIndex => unreachable!("handled before the index is loaded"),
     }
 }
 
-fn build_library(cfg: &Config) -> Result<Lib> {
+fn build_library(cfg: &Config, load_existing_index: bool) -> Result<Lib> {
     let store = SqliteDocumentStore::open(&cfg.storage.database)?;
     let mut index = UsearchIndex::new(cfg.embedding.dimension)?;
-    if cfg.storage.vector_index.exists() {
-        index.load(&cfg.storage.vector_index)?;
+    if load_existing_index && cfg.storage.vector_index.exists() {
+        index.load(&cfg.storage.vector_index).map_err(|e| {
+            Error::VectorIndex(format!(
+                "vector index at '{}' failed to load: {e}; run `nucklavee \
+                 rebuild-index` to rebuild it from the document store",
+                cfg.storage.vector_index.display()
+            ))
+        })?;
     }
     let embedder = ApiEmbedder::new(cfg.embedder_config())?;
     Library::new(store, index, embedder)

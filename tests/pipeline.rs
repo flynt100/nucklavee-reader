@@ -146,6 +146,10 @@ impl Embedder for FlakyEmbedder {
     fn dimension(&self) -> usize {
         self.inner.dimension()
     }
+
+    fn fingerprint(&self) -> String {
+        self.inner.fingerprint()
+    }
 }
 
 #[test]
@@ -272,6 +276,10 @@ impl Embedder for ForbiddenEmbedder {
 
     fn dimension(&self) -> usize {
         DIM
+    }
+
+    fn fingerprint(&self) -> String {
+        format!("hash-bow|v1|dim={DIM}")
     }
 }
 
@@ -443,6 +451,178 @@ fn missing_title_renders_as_untitled() {
         ctx.contains("[Source: untitled]"),
         "missing title is ordinary data and falls back to 'untitled':\n{ctx}"
     );
+}
+
+/// HashEmbedder wrapper claiming a distinct model identity — same vectors,
+/// same dimension, different vector-space fingerprint.
+struct NamedModelEmbedder {
+    inner: HashEmbedder,
+    model: &'static str,
+}
+
+impl Embedder for NamedModelEmbedder {
+    fn embed(&self, texts: &[&str]) -> nucklavee::Result<Vec<Vec<f32>>> {
+        self.inner.embed(texts)
+    }
+    fn dimension(&self) -> usize {
+        self.inner.dimension()
+    }
+    fn fingerprint(&self) -> String {
+        format!("named-model|{}|dim={}", self.model, self.inner.dimension())
+    }
+}
+
+#[test]
+fn changing_embedding_model_at_same_dimension_triggers_reprocessing() {
+    use nucklavee::storage::DocumentStore;
+
+    let store = InMemoryDocumentStore::default();
+
+    let first = {
+        let mut lib = Library::new(
+            store.clone(),
+            UsearchIndex::new(DIM).expect("index"),
+            NamedModelEmbedder {
+                inner: HashEmbedder::new(DIM),
+                model: "model-a",
+            },
+        )
+        .expect("build");
+        lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest a")
+    };
+    let fingerprint_a = store
+        .get_document(first)
+        .expect("doc")
+        .meta
+        .processing_fingerprint;
+
+    // Same bytes, same dimension, different model: equal dimensions do NOT
+    // imply a shared vector space, so this must reprocess (same stable id,
+    // new fingerprint) rather than silently reuse model-a's embeddings.
+    let second = {
+        let mut lib = Library::new(
+            store.clone(),
+            UsearchIndex::new(DIM).expect("index"),
+            NamedModelEmbedder {
+                inner: HashEmbedder::new(DIM),
+                model: "model-b",
+            },
+        )
+        .expect("build");
+        lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest b")
+    };
+    assert_eq!(first, second, "reprocessing keeps a stable document id");
+    let fingerprint_b = store
+        .get_document(first)
+        .expect("doc")
+        .meta
+        .processing_fingerprint;
+    assert_ne!(
+        fingerprint_a, fingerprint_b,
+        "a model change must change the processing fingerprint"
+    );
+    assert_eq!(store.list_documents().expect("list").len(), 1);
+}
+
+#[test]
+fn same_bytes_ingested_as_markdown_and_html_are_not_conflated() {
+    use nucklavee::storage::DocumentStore;
+
+    let store = InMemoryDocumentStore::default();
+    let mut lib = Library::new(
+        store.clone(),
+        UsearchIndex::new(DIM).expect("index"),
+        HashEmbedder::new(DIM),
+    )
+    .expect("build");
+
+    // Bytes that are valid in both formats but parse differently.
+    let bytes = "# Heading\n\n<p>body paragraph</p>\n";
+    let as_md = lib
+        .ingest(Source::RawMarkdown(bytes.into()))
+        .expect("ingest as markdown");
+    let fp_md = store
+        .get_document(as_md)
+        .expect("doc")
+        .meta
+        .processing_fingerprint;
+
+    // Identical bytes → same content hash, but the HTML interpretation must
+    // not reuse the markdown interpretation: the format is part of the
+    // fingerprint, so this reprocesses.
+    let as_html = lib
+        .ingest(Source::RawHtml(bytes.into()))
+        .expect("ingest as html");
+    assert_eq!(as_md, as_html, "same bytes keep one stable document id");
+    let doc = store.get_document(as_html).expect("doc");
+    assert_ne!(
+        doc.meta.processing_fingerprint, fp_md,
+        "format change must change the fingerprint"
+    );
+    assert!(
+        matches!(doc.meta.format, nucklavee::SourceFormat::Html),
+        "stored interpretation reflects the latest ingest"
+    );
+}
+
+/// Embedder that returns structurally invalid vectors — the library must
+/// reject them before anything reaches the authoritative store.
+struct MalformedEmbedder {
+    dimension: usize,
+    poison: fn(usize) -> Vec<f32>,
+}
+
+impl Embedder for MalformedEmbedder {
+    fn embed(&self, texts: &[&str]) -> nucklavee::Result<Vec<Vec<f32>>> {
+        Ok(texts.iter().map(|_| (self.poison)(self.dimension)).collect())
+    }
+    fn dimension(&self) -> usize {
+        self.dimension
+    }
+    fn fingerprint(&self) -> String {
+        format!("malformed|dim={}", self.dimension)
+    }
+}
+
+#[test]
+fn invalid_embedder_output_never_reaches_the_store() {
+    use nucklavee::storage::DocumentStore;
+
+    type Poison = fn(usize) -> Vec<f32>;
+    let poisons: [(&str, Poison); 3] = [
+        ("NaN values", |d| vec![f32::NAN; d]),
+        ("infinite values", |d| vec![f32::INFINITY; d]),
+        ("wrong dimension", |d| vec![1.0; d + 3]),
+    ];
+
+    for (label, poison) in poisons {
+        let store = InMemoryDocumentStore::default();
+        let mut lib = Library::new(
+            store.clone(),
+            UsearchIndex::new(DIM).expect("index"),
+            MalformedEmbedder {
+                dimension: DIM,
+                poison,
+            },
+        )
+        .expect("build");
+
+        let err = lib
+            .ingest(Source::RawMarkdown(DOC.into()))
+            .expect_err("malformed vectors must be rejected");
+        assert!(
+            matches!(err, Error::Embedding(_)),
+            "{label}: expected an embedding error, got {err}"
+        );
+        assert!(
+            store.list_documents().expect("list").is_empty(),
+            "{label}: nothing may be stored after rejected embeddings"
+        );
+        assert!(
+            store.get_all_embeddings().expect("emb").is_empty(),
+            "{label}: no embeddings may be persisted"
+        );
+    }
 }
 
 // Arc is used by FlakyEmbedder's AtomicUsize import group.

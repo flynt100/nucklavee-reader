@@ -166,7 +166,7 @@ where
         let mut doc = doc;
         normalize_document(&mut doc);
         doc.meta.processing_fingerprint =
-            processing_fingerprint(&options, self.embedder.dimension());
+            processing_fingerprint(&options, doc.meta.format, &self.embedder);
 
         // Deduplication (spec §7.4) is content **and** configuration aware:
         // identical raw content processed under the same settings reuses the
@@ -204,29 +204,46 @@ where
                     chunks.len()
                 )));
             }
+            // The store is authoritative and the index is rebuilt from it, so
+            // every persisted embedding must be valid for the configured
+            // index — regardless of which Embedder implementation produced
+            // it. Rejecting here keeps invalid vectors out of SQLite.
+            validate_embeddings(&vectors, self.embedder.dimension())?;
             vectors
         };
 
-        if reprocessing {
-            for old in self.store.get_chunks_by_document(doc.meta.id)? {
-                self.index.remove(old.id)?;
-            }
-        }
+        // The previous generation's chunk IDs must be captured *before* the
+        // projection replacement retires them from the store.
+        let old_chunk_ids: Vec<chunking::ChunkId> = if reprocessing {
+            self.store
+                .get_chunks_by_document(doc.meta.id)?
+                .into_iter()
+                .map(|c| c.id)
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // Atomic in the store: document + chunks + embeddings land together
-        // (or not at all). Embeddings are durable so the index below is a
-        // derived projection that can always be rebuilt from the store.
+        // (or not at all). The authoritative commit happens FIRST; only then
+        // is the derived index touched, so a failure anywhere in index
+        // maintenance leaves the store correct and is repairable by
+        // `rebuild_index()`.
         self.store
             .replace_document_projection(&doc, &chunks, &vectors)?;
 
+        let consistency = |e: Error| {
+            Error::Consistency(format!(
+                "document {} is stored but vector-index maintenance failed: {e}; \
+                 run rebuild_index() (CLI: `nucklavee rebuild-index`) to repair",
+                doc.meta.id
+            ))
+        };
+        for old_id in old_chunk_ids {
+            self.index.remove(old_id).map_err(consistency)?;
+        }
         for (chunk, vector) in chunks.iter().zip(vectors) {
-            self.index.add(chunk.id, vector).map_err(|e| {
-                Error::Consistency(format!(
-                    "document {} is stored but vector indexing failed: {e}; \
-                     run rebuild_index() (CLI: `nucklavee rebuild-index`) to repair",
-                    doc.meta.id
-                ))
-            })?;
+            self.index.add(chunk.id, vector).map_err(consistency)?;
         }
 
         Ok(doc.meta.id)
@@ -236,6 +253,12 @@ where
     /// re-calling the embedding provider. Returns the number of vectors
     /// indexed. Safe to run repeatedly; repairs a missing, stale, or
     /// partially-written index.
+    ///
+    /// On failure the in-memory index may be partially populated; the fix is
+    /// the same operation — run `rebuild_index()` again. Persisted index
+    /// files are untouched (callers persist explicitly via [`Self::save_index`]
+    /// after a successful rebuild), so a failed rebuild never damages the
+    /// on-disk generation.
     pub fn rebuild_index(&mut self) -> Result<usize> {
         self.index.clear()?;
         let pairs = self.store.get_all_embeddings()?;
@@ -345,13 +368,27 @@ where
     }
 
     /// Remove a document and its chunks from both the store and the vector
-    /// index. Idempotent.
+    /// index. Idempotent. The authoritative store is updated first; if the
+    /// derived index then fails to clean up, the error directs the operator
+    /// to `rebuild_index()` rather than leaving a document that is stored but
+    /// half-searchable.
     pub fn remove_document(&mut self, id: DocumentId) -> Result<()> {
-        let chunks = self.store.get_chunks_by_document(id)?;
-        for chunk in &chunks {
-            self.index.remove(chunk.id)?;
-        }
+        let chunk_ids: Vec<chunking::ChunkId> = self
+            .store
+            .get_chunks_by_document(id)?
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
         self.store.remove_document(id)?;
+        for chunk_id in chunk_ids {
+            self.index.remove(chunk_id).map_err(|e| {
+                Error::Consistency(format!(
+                    "document {id} was removed from the store but index cleanup \
+                     failed: {e}; run rebuild_index() (CLI: `nucklavee \
+                     rebuild-index`) to repair",
+                ))
+            })?;
+        }
         Ok(())
     }
 
@@ -370,14 +407,59 @@ where
     }
 }
 
-/// Canonical fingerprint of every ingest setting that changes derived output.
-/// Format-versioned (`fp1|…`) so future settings extend rather than collide.
-fn processing_fingerprint(options: &IngestOptions, embed_dimension: usize) -> String {
+/// Canonical fingerprint of everything that changes a document's derived
+/// output: how the bytes were interpreted (source format + parser policy),
+/// how they were normalized and chunked, and which vector space they were
+/// embedded into. Two ingests may share a fingerprint only if their stored
+/// projections are interchangeable. Format-versioned (`fp2|…`) so future
+/// settings extend rather than collide.
+fn processing_fingerprint<E: embedder::Embedder>(
+    options: &IngestOptions,
+    format: SourceFormat,
+    embedder: &E,
+) -> String {
+    let parser_policy = match format {
+        SourceFormat::Markdown => parsers::markdown::PARSER_POLICY_VERSION,
+        SourceFormat::Html => parsers::html::PARSER_POLICY_VERSION,
+        // No PDF parser exists yet; give it a distinct token so the first
+        // real implementation cannot collide with text-format fingerprints.
+        SourceFormat::Pdf => "pdf0-unimplemented",
+    };
     let canonical = format!(
-        "fp1|normalize_bare_callouts={}|token_budget={}|embed_dimension={}",
-        options.normalize_bare_callouts, options.token_budget, embed_dimension
+        "fp2|format={format:?}|parser_policy={parser_policy}\
+         |normalize_bare_callouts={}|chunker={}|token_budget={}\
+         |embedder={}|embed_dimension={}",
+        options.normalize_bare_callouts,
+        chunking::structural::CHUNKER_VERSION,
+        options.token_budget,
+        embedder.fingerprint(),
+        embedder.dimension()
     );
     parsers::sha256_hex(&canonical)
+}
+
+/// Reject embedder output that cannot legally enter the authoritative store:
+/// wrong-dimension vectors or non-finite values. The `ApiEmbedder` validates
+/// its own provider responses, but the `Embedder` trait accepts arbitrary
+/// implementations — this is the boundary that guarantees every persisted
+/// embedding can rebuild the configured index.
+fn validate_embeddings(vectors: &[Vec<f32>], expected_dimension: usize) -> Result<()> {
+    for (i, vector) in vectors.iter().enumerate() {
+        if vector.len() != expected_dimension {
+            return Err(Error::Embedding(format!(
+                "embedder returned a vector of dimension {} for chunk {i}, \
+                 expected {expected_dimension}",
+                vector.len()
+            )));
+        }
+        if let Some(bad) = vector.iter().find(|v| !v.is_finite()) {
+            return Err(Error::Embedding(format!(
+                "embedder returned a non-finite value ({bad}) in the vector \
+                 for chunk {i}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Rewrite a parsed document's identity to `id`, including the document ID

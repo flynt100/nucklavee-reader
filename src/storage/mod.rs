@@ -95,6 +95,31 @@ pub(crate) fn validate_projection(
             )));
         }
     }
+    // The store is authoritative and the vector index is rebuilt from it, so
+    // no embedding may be persisted that could not re-enter an index: every
+    // vector must be finite and all vectors in a projection must share one
+    // dimension. (The library additionally checks that dimension against the
+    // configured embedder; the store cannot know the configured value.)
+    if let Some(first) = embeddings.first() {
+        let dimension = first.len();
+        for (i, vector) in embeddings.iter().enumerate() {
+            if vector.len() != dimension {
+                return Err(Error::Consistency(format!(
+                    "embedding {i} in projection for document {} has dimension {} \
+                     but the projection's first embedding has dimension {dimension}",
+                    document.meta.id,
+                    vector.len()
+                )));
+            }
+            if let Some(bad) = vector.iter().find(|v| !v.is_finite()) {
+                return Err(Error::Consistency(format!(
+                    "embedding {i} in projection for document {} contains a \
+                     non-finite value ({bad})",
+                    document.meta.id
+                )));
+            }
+        }
+    }
     Ok(())
 }
 

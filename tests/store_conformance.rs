@@ -162,8 +162,35 @@ fn conformance<S: DocumentStore>(store: S) {
         .expect_err("missing embeddings must be rejected");
     assert!(matches!(err, nucklavee::Error::Consistency(_)), "got {err}");
 
+    // validation: non-finite embedding values are rejected (a stored
+    // embedding must always be able to rebuild the index)
+    let poisoned = chunk_for(d1.meta.id, 0);
+    let err = store
+        .replace_document_projection(&d1, &[poisoned], &[vec![f32::NAN, 1.0, 0.0]])
+        .expect_err("non-finite embedding must be rejected");
+    assert!(matches!(err, nucklavee::Error::Consistency(_)), "got {err}");
+
+    // validation: embeddings with mixed dimensions are rejected
+    let mixed_a = chunk_for(d1.meta.id, 0);
+    let mixed_b = chunk_for(d1.meta.id, 1);
+    let err = store
+        .replace_document_projection(
+            &d1,
+            &[mixed_a, mixed_b],
+            &[vec![1.0, 0.0, 0.0], vec![1.0, 0.0]],
+        )
+        .expect_err("mixed-dimension embeddings must be rejected");
+    assert!(matches!(err, nucklavee::Error::Consistency(_)), "got {err}");
+
     // remove_document drops the doc, chunks, and embeddings, idempotently
     let d3 = store_projection(&store, "# Three\n\nbody three\n", 2);
+    let d3_chunk_ids: Vec<Uuid> = store
+        .get_chunks_by_document(d3.meta.id)
+        .expect("d3 chunks before remove")
+        .iter()
+        .map(|c| c.id)
+        .collect();
+    assert_eq!(d3_chunk_ids.len(), 2, "d3 stored with two chunks");
     store.remove_document(d3.meta.id).expect("remove");
     assert!(store.get_document(d3.meta.id).is_err());
     assert!(
@@ -177,8 +204,8 @@ fn conformance<S: DocumentStore>(store: S) {
             .get_all_embeddings()
             .expect("embeddings after remove")
             .iter()
-            .all(|(id, _)| !d3.body.is_empty() || *id != d3.meta.id),
-        "removed document's embeddings are gone"
+            .all(|(id, _)| !d3_chunk_ids.contains(id)),
+        "removed document's chunk embeddings are gone"
     );
     store.remove_document(d3.meta.id).expect("remove twice");
 }

@@ -176,4 +176,15 @@ impl Embedder for ApiEmbedder {
     fn dimension(&self) -> usize {
         self.config.dimension
     }
+
+    /// Provider identity: endpoint + model + dimension distinguish vector
+    /// spaces across providers and models. The API key is deliberately
+    /// excluded — it does not affect the vector space and must not be
+    /// persisted.
+    fn fingerprint(&self) -> String {
+        format!(
+            "api|endpoint={}|model={}|dim={}",
+            self.config.endpoint, self.config.model, self.config.dimension
+        )
+    }
 }

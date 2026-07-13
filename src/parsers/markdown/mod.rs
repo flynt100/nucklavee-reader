@@ -51,6 +51,12 @@ use preparse::{
     normalize_preparse_input,
 };
 
+/// Version of this parser's interpretation policy (heuristics, IR mapping).
+/// Bump on any change that makes previously-ingested markdown parse
+/// differently — it feeds the ingest `processing_fingerprint`, so a bump
+/// triggers reprocessing instead of reusing a stale interpretation.
+pub const PARSER_POLICY_VERSION: &str = "md1";
+
 /// Parser options. Phase 1 exposes only the source descriptor; defaults are
 /// sufficient for pure-string parsing.
 #[derive(Debug, Clone, Default)]
