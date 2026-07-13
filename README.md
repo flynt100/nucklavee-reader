@@ -48,8 +48,10 @@ In short: **normalize anything, preserve structure, and make it searchable.**
   `reqwest`, redirects followed), auto-detect HTML vs Markdown from the
   `Content-Type` header (with URL-extension and body fallbacks), and record
   the final URL as provenance. Network failures surface as typed errors.
-- **Content-hash deduplication** on ingest (spec §7.4): identical content
-  returns the existing document ID.
+- **Option-aware deduplication** on ingest (spec §7.4): identical content
+  processed identically returns the existing document ID; identical content
+  with changed processing options is reprocessed in place under the same ID
+  (`content_hash` + `processing_fingerprint`).
 - **Document stores**: an in-memory store and a **SQLite** store
   (`rusqlite`, bundled), both implementing the full frozen `DocumentStore`
   contract (hash lookup, listing, removal, chunk retrieval ordered by
@@ -70,26 +72,28 @@ In short: **normalize anything, preserve structure, and make it searchable.**
 - **Embeddings + vector search backends**: an `ApiEmbedder` (OpenAI-compatible
   `/v1/embeddings`, blocking) and a `UsearchIndex` (cosine HNSW via `usearch`)
   with add/search/remove and file persistence.
-- **CLI**: `ingest` / `ingest-emit` over `.md`, `.html`, `.htm` files or
-  `http(s)://` URLs, emitting `markdown` or `html`, with locked boundary
-  errors for everything else.
+- **Reliability model** (2026-07-13 pass): SQLite is authoritative, the
+  vector index is a derived, rebuildable projection. Ingest derives
+  everything (parse/chunk/embed) before writing anything, then commits the
+  document + chunks + embeddings in one transaction — a failed ingest stores
+  nothing. `rebuild-index` restores a lost/corrupt index from stored
+  embeddings without re-embedding. See
+  `docs/adr/0001-persistence-and-index-consistency.md`.
+- **CLI** (spec §8, Task 10): `ingest` / `search` / `emit` / `list` / `info`
+  / `context` / `remove` / `rebuild-index` over a persistent SQLite +
+  usearch library, TOML config, `--json` machine output.
 
 ## What Is Not Implemented Yet
 
-- The full spec §8 CLI command set (`search`, `list`, `info`, `context`,
-  `remove`, config file) — Task 10. The library performs semantic search end
-  to end today, but the CLI still only exposes `ingest`/`ingest-emit`.
-- PDF ingestion (Tasks 11–12).
-- Full CLI command set (`search`, `list`, `info`, `context`, `remove` — Task 10)
-- PDF pipeline (Tasks 11–12)
+- PDF ingestion (Tasks 11–12) — the next phase.
 
-Remaining unimplemented paths return explicit, tested `not implemented` /
+Unsupported paths return explicit, tested `unsupported format` /
 `invalid input` errors (see `docs/cli.md`).
 
 ## Implementation Order
 
 Per-task scopes, guardrails, and acceptance criteria live in
-`docs/full-scope-audit-2026-07-06.md`; roadmap status lives in `TODO.md`.
+`docs/audits/2026-07-06-full-scope.md`; roadmap status lives in `TODO.md`.
 
 1. ~~Phase 1 / 2A / 2B — markdown core loop + hardening~~ ✅
 2. ~~Task 0/1 — cleanup, trait freeze, dedupe, provenance remap~~ ✅
@@ -137,6 +141,9 @@ cargo run --bin nucklavee -- emit <document-id> html
 cargo run --bin nucklavee -- list --json
 cargo run --bin nucklavee -- info <document-id>
 cargo run --bin nucklavee -- remove <document-id>
+
+# Rebuild the vector index from stored embeddings (no re-embedding)
+cargo run --bin nucklavee -- rebuild-index
 ```
 
 `emit` formats: `markdown`, `html`, `text`. `ingest`/`search`/`context`
@@ -147,7 +154,9 @@ command reference and config schema.
 
 - `nucklavee-spec.md` (source of truth for scope and behavior)
 - `docs/ir-deltas-from-spec.md` (spec-vs-implementation deltas — read before building)
-- `docs/full-scope-audit-2026-07-06.md` (audit + per-task build plan)
+- `docs/audits/2026-07-06-full-scope.md` (audit + per-task build plan)
 - `docs/phase-gates.md` (phase exit criteria and blocker vs warning policy)
 - `docs/normalization-deltas.md` (allowed markdown parse/emit deltas vs semantic regressions)
 - `docs/cli.md` (CLI command reference and config schema)
+- `docs/adr/0001-persistence-and-index-consistency.md` (consistency model: SQLite authoritative, index derived)
+- `CHANGELOG.md` (notable changes by date)

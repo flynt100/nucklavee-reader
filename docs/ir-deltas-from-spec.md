@@ -58,19 +58,30 @@ is canonical regardless of source format (Markdown parser output was
 previously un-normalized while HTML output was already tidy). This merges
 adjacent `Inline::Text` runs and drops empty text nodes — whitespace-agnostic
 and provenance-preserving — so the chunker and any other reader of stored
-documents get consistent input. Documents inserted directly via
-`DocumentStore::upsert_document` (bypassing ingest) are stored as given.
+documents get consistent input. Documents written directly via
+`DocumentStore::replace_document_projection` (bypassing ingest) are stored
+as given.
 
 ## Storage / vector / embedder traits (spec §7)
 
-Frozen in the 2026-07-06 trait-surface push (Task 1 of the audit plan):
+Frozen in the 2026-07-06 trait-surface push (Task 1 of the audit plan), then
+revised in the 2026-07-13 reliability pass (see
+`docs/adr/0001-persistence-and-index-consistency.md`):
 
-- `DocumentStore`: `upsert_document`, `get_document`, `find_by_content_hash`,
-  `list_documents`, `remove_document` (also removes the document's chunks),
-  `insert_chunks`, `get_chunks_by_document` (**ordered by `sequence_index`** —
-  both backends), `get_chunks_by_ids` (request order preserved, unknown IDs
-  skipped).
-- `VectorIndex`: `add`, `remove`, `search`, `save(&Path)`, `load(&Path)`.
+- `DocumentStore`: `get_document`, `find_by_content_hash`, `list_documents`,
+  `remove_document` (also removes the document's chunks and embeddings),
+  **`replace_document_projection(&Document, &[Chunk], &[Vec<f32>])`** — the
+  single transactional write path (document + chunk set + embeddings change
+  together or not at all; `validate_projection` rejects foreign chunks,
+  duplicate/non-contiguous `sequence_index`, and count mismatches as
+  `Error::Consistency`), `get_chunks_by_document` (**ordered by
+  `sequence_index`** — both backends), `get_chunks_by_ids` (request order
+  preserved, unknown IDs skipped), `get_all_embeddings` (feeds
+  `Library::rebuild_index`). The former `upsert_document`/`insert_chunks`
+  pair was removed — partial writes are no longer expressible.
+- `VectorIndex`: `add` (replacement-safe), `remove`, `search`, `clear`,
+  `save(&Path)`, `load(&Path)`. The index is a derived projection; the store
+  is authoritative.
 - `Embedder`: unchanged from spec, **blocking I/O** — implementations use
   `reqwest::blocking`; no tokio/async runtime in the MVP.
 
@@ -96,9 +107,14 @@ Frozen in the 2026-07-06 trait-surface push (Task 1 of the audit plan):
 - **`ApiEmbedder`** (OpenAI-compatible `/v1/embeddings`, `reqwest::blocking`).
   Request/response JSON is (de)serialized manually with `serde_json` because
   reqwest's `json` feature is disabled to keep the dependency surface small.
-  Results are re-sorted by the provider's `index` field and validated against
-  the configured `dimension`. `use_env_proxy` mirrors `crate::net` so tests
-  hit a loopback mock directly.
+  The provider response is validated as a **complete permutation** of the
+  inputs — index bounds, duplicate indexes, per-vector dimension, and finite
+  values are all checked (count equality alone does not prove input↔vector
+  correspondence). Provider error bodies quoted into diagnostics are bounded
+  (`net::truncate_for_diagnostics`). `use_env_proxy` mirrors `crate::net` so
+  tests hit a loopback mock directly. HTTP client construction is shared with
+  URL fetching via `net::build_blocking_client` so timeout/proxy policy
+  cannot drift between the two call sites.
 
 ## Parsers / emitters (spec §4–5)
 
@@ -167,17 +183,30 @@ treat `byte_range` as optional (it already is in the type).
 - `Library<S, V, E>` is generic over store/index/embedder traits, not concrete
   types, and owns a concrete `StructuralChunker` (so `Library::new` is
   fallible — it loads the tokenizer).
-- `ingest` runs the full pipeline: parse → validate → `normalize_document` →
-  dedupe → `upsert_document` → chunk → `insert_chunks` → embed chunk contents
-  → `index.add(chunk_id, vector)`. It computes `content_hash` (SHA-256 of the
-  raw input) and returns the existing `DocumentId` on a hash hit
-  (spec §7.4 dedupe) *before* chunking, so duplicates are never re-indexed.
+- `ingest` runs the full pipeline **derive-first**: parse → validate →
+  `normalize_document` → dedupe check → chunk → embed → *then* one
+  transactional `replace_document_projection` → `index.add` per vector. All
+  fallible work happens before any persistent write, so a failed ingest
+  leaves nothing behind and retrying is always safe (see
+  `docs/adr/0001-persistence-and-index-consistency.md`).
+- Dedupe is two-level: `content_hash` (SHA-256 of the raw input, spec §7.4)
+  detects identical bytes; `processing_fingerprint` (hash of ingest options +
+  embedder dimension) detects identical *processing*. Hash hit + matching
+  fingerprint returns the existing ID with no work; hash hit + different
+  fingerprint reprocesses **in place** under the same `DocumentId` (provenance
+  retagged, old vectors removed, projection replaced atomically).
+- `rebuild_index()` (CLI `rebuild-index`) repopulates the vector index from
+  embeddings stored in SQLite — no re-embedding, no network.
 - `query(text, limit)` embeds the query, `index.search`es, and joins the hit
   chunk IDs back through `store.get_chunks_by_ids` (rank order preserved).
 - `context_window(query, budget)` retrieves up to `CONTEXT_SEARCH_K` (50)
   chunks and greedily packs them in rank order, each prefixed with a
-  `[Source: {title} > {section}]` header, until the next chunk would exceed
-  the budget. Header + content tokens are counted with the chunker's
+  `[Source: {title} > {section}]` header. A chunk that does not fit is
+  **skipped, not a stop condition** — later, smaller chunks may still fit
+  (an oversized top hit cannot starve the window). Duplicate chunk IDs are
+  packed once; a failed document-title lookup is an `Error::Consistency`,
+  not silently "untitled" (that fallback is reserved for genuinely missing
+  titles). Header + content tokens are counted with the chunker's
   tokenizer. **Edge case:** the section path's first element is usually the
   H1, which is also the document title, so the title is dropped from the path
   when they match — the header reads `[Source: Title > Section]`, not

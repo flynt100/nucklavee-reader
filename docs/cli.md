@@ -30,7 +30,7 @@ etc.).
 
 - `--config <path>` — config file location.
 - `--json` — machine-readable JSON output (applies to `ingest`, `list`,
-  `info`, `search`).
+  `info`, `search`, `rebuild-index`).
 
 ## Commands
 
@@ -43,6 +43,7 @@ etc.).
 | `info <id>` | Show a document's metadata and chunk count. |
 | `context <query> [--budget N]` | Assemble a relevance-ranked, provenance-headed context window within a token budget (default 2048). |
 | `remove <id>` | Remove a document and its chunks from the store and the vector index. |
+| `rebuild-index` | Rebuild the vector index from embeddings stored in SQLite — no re-embedding, no network. Use after index corruption or loss; the store is authoritative and the index is a derived projection. |
 
 Unknown `emit` formats exit with code 2 and
 `unsupported format '<value>'. supported: markdown, html, text`. A missing or
