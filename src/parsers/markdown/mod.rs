@@ -153,6 +153,7 @@ pub fn parse_markdown(input: &str, opts: ParseOptions) -> Document {
         frontmatter,
         ingested_at: Utc::now(),
         content_hash: sha256_hex(input),
+        processing_fingerprint: String::new(),
     };
     let mut doc = Document::new(meta);
 

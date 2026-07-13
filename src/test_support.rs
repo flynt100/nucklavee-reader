@@ -30,6 +30,10 @@ impl VectorIndex for NoopVectorIndex {
         Ok(Vec::new())
     }
 
+    fn clear(&mut self) -> Result<()> {
+        Ok(())
+    }
+
     fn save(&self, _path: &Path) -> Result<()> {
         Ok(())
     }

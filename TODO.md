@@ -153,7 +153,7 @@ Primary goal: practical PDF ingestion with explicit confidence and graceful fall
 
 This section is the single status source for the roadmap. (`NEXT_BUILD_PUSH.md`
 was retired in the 2026-07-06 cleanup; per-push task specs now live in
-`docs/full-scope-audit-2026-07-06.md`.)
+`docs/audits/2026-07-06-full-scope.md`.)
 
 - **Current truth:** Markdown + HTML **parsers and emitters** complete, with
   bidirectional cross-format equivalence gates (html↔markdown via
@@ -170,9 +170,15 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
 - **Phases 1–5 are complete.** The library and CLI perform ingest (md/html/
   url) → convert (md/html/text) → chunk → embed → index → semantic search →
   context assembly, end to end, over persistent SQLite + usearch storage.
+- **2026-07-13 reliability pass done** (external-review remediation): SQLite
+  authoritative / usearch derived, transactional projection writes,
+  derive-first ingest, option-aware dedupe via `processing_fingerprint`,
+  durable embeddings + `rebuild_index`, embedder response permutation
+  validation. See `docs/adr/0001-persistence-and-index-consistency.md` and
+  `CHANGELOG.md`.
 - **Exact next focus:** **Phase 6 — the PDF pipeline (audit Tasks 11–12)**,
   pending a comprehensive last-pass review before greenlighting.
-- **Task plan reference:** `docs/full-scope-audit-2026-07-06.md` (per-task
+- **Task plan reference:** `docs/audits/2026-07-06-full-scope.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).
 - **Normalization policy reference:** `docs/normalization-deltas.md` (acceptable parse/emit deltas vs semantic regressions).

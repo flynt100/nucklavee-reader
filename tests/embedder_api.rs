@@ -111,3 +111,84 @@ fn empty_input_makes_no_request() {
     let vectors = embedder.embed(&[]).expect("empty embed");
     assert!(vectors.is_empty());
 }
+
+// --- response permutation validation ---------------------------------------
+// A provider response must be a complete permutation of the inputs: count
+// equality alone is not proof of correct input↔vector correspondence.
+
+#[test]
+fn duplicate_index_is_rejected() {
+    let body = r#"{"data":[
+        {"embedding":[1.0,0.0],"index":0},
+        {"embedding":[0.0,1.0],"index":0}
+    ]}"#;
+    let (endpoint, _rx) = serve_once("200 OK", body);
+
+    let embedder = ApiEmbedder::new(config(endpoint, 2)).expect("embedder");
+    let err = embedder.embed(&["a", "b"]).expect_err("duplicate index");
+    assert!(
+        matches!(err, nucklavee::Error::Embedding(ref m) if m.contains("duplicate index")),
+        "got {err}"
+    );
+}
+
+#[test]
+fn out_of_range_index_is_rejected() {
+    let body = r#"{"data":[
+        {"embedding":[1.0,0.0],"index":0},
+        {"embedding":[0.0,1.0],"index":7}
+    ]}"#;
+    let (endpoint, _rx) = serve_once("200 OK", body);
+
+    let embedder = ApiEmbedder::new(config(endpoint, 2)).expect("embedder");
+    let err = embedder.embed(&["a", "b"]).expect_err("out-of-range index");
+    assert!(
+        matches!(err, nucklavee::Error::Embedding(ref m) if m.contains("out of range")),
+        "got {err}"
+    );
+}
+
+#[test]
+fn wrong_vector_count_is_rejected() {
+    let body = r#"{"data":[{"embedding":[1.0,0.0],"index":0}]}"#;
+    let (endpoint, _rx) = serve_once("200 OK", body);
+
+    let embedder = ApiEmbedder::new(config(endpoint, 2)).expect("embedder");
+    let err = embedder.embed(&["a", "b"]).expect_err("missing vector");
+    assert!(
+        matches!(err, nucklavee::Error::Embedding(ref m) if m.contains("expected 2")),
+        "got {err}"
+    );
+}
+
+#[test]
+fn non_finite_values_are_rejected() {
+    // JSON has no NaN literal, but serde_json accepts these as numbers that
+    // overflow f32 to infinity.
+    let body = r#"{"data":[{"embedding":[1.0e39,0.0],"index":0}]}"#;
+    let (endpoint, _rx) = serve_once("200 OK", body);
+
+    let embedder = ApiEmbedder::new(config(endpoint, 2)).expect("embedder");
+    let err = embedder.embed(&["a"]).expect_err("non-finite value");
+    assert!(
+        matches!(err, nucklavee::Error::Embedding(ref m) if m.contains("non-finite")),
+        "got {err}"
+    );
+}
+
+#[test]
+fn oversized_provider_error_body_is_truncated_in_diagnostics() {
+    let huge = "e".repeat(50_000);
+    let (endpoint, _rx) = serve_once("500 Internal Server Error", &huge);
+
+    let embedder = ApiEmbedder::new(config(endpoint, 3)).expect("embedder");
+    let err = embedder.embed(&["x"]).expect_err("500 should error");
+    let message = err.to_string();
+    assert!(message.contains("HTTP 500"), "got {message}");
+    assert!(
+        message.len() < 1_000,
+        "error message must be bounded, got {} chars",
+        message.len()
+    );
+    assert!(message.contains("(truncated)"), "got {message}");
+}

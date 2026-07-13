@@ -20,6 +20,7 @@ fn bare_doc(body: Vec<BlockNode>) -> Document {
             frontmatter: None,
             ingested_at: Utc::now(),
             content_hash: String::new(),
+            processing_fingerprint: String::new(),
         },
         body,
         diagnostics: Vec::new(),

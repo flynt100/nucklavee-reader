@@ -42,6 +42,14 @@ pub struct DocumentMeta {
     pub frontmatter: Option<Frontmatter>,
     pub ingested_at: DateTime<Utc>,
     pub content_hash: String,
+    /// Hash of every ingest setting that changes derived output (chunk
+    /// budget, normalization options, embedding dimension, …). Distinct from
+    /// `content_hash`: the same bytes processed under different settings get
+    /// a different fingerprint and are reprocessed rather than deduplicated.
+    /// Empty for documents produced by a bare parser call (set by
+    /// `Library::ingest`).
+    #[serde(default)]
+    pub processing_fingerprint: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
