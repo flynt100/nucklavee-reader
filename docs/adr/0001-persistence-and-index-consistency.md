@@ -1,7 +1,9 @@
 # ADR 0001 — Persistence and index consistency
 
 - **Status:** Accepted (2026-07-13); amended (2026-07-13 stabilization gate,
-  see [Amendments](#amendments-2026-07-13-stabilization-gate))
+  see [Amendments](#amendments-2026-07-13-stabilization-gate); 2026-07-14
+  embedding-space invariant, see
+  [Amendments](#amendments-2026-07-14-collection-wide-embedding-space))
 - **Context:** External review of the Phase 1–5 build (2026-07 independent
   audit) identified reliability gaps around partial-ingest states, dedupe
   correctness, and the relationship between the SQLite store and the usearch
@@ -114,6 +116,15 @@ bumped whenever behavior changes how an already-ingested document would be
 interpreted — that is what turns heuristic improvements (PDF especially)
 into reprocessing instead of stale-dedupe bugs.
 
+*Scope correction (2026-07-14):* the processing fingerprint is a
+**per-document** processing identity. It decides whether one document must
+be reprocessed; it cannot protect the collection — nothing in it stops two
+documents from being ingested under different models into one index, or a
+search-only session from querying model-A vectors with a model-B embedder.
+That collection-wide invariant is `EmbeddingSpace` (see the 2026-07-14
+amendments below), and model changes are now rejected at construction
+rather than absorbed as reprocessing.
+
 ### A2. No invalid embedding can enter the authoritative store
 
 §4 validated only the `ApiEmbedder`'s own provider responses; an arbitrary
@@ -156,6 +167,71 @@ directs at `rebuild_index()`. A failed retire of a replaced usearch vector
 is an error rather than silently ignored (orphaned HNSW entries degrade
 recall invisibly).
 
+## Amendments (2026-07-14 collection-wide embedding space)
+
+The 2026-07-13 amendments left one class of failure open: nothing bound the
+**collection** to a single vector space. Per-document fingerprints only fire
+when a specific document is re-ingested, so a model change could still mix
+vector spaces (different documents under different models) or silently
+search model-A vectors with model-B query embeddings after a restart. The
+final pre-PDF gate closes this.
+
+### A5. One library equals one vector space
+
+`EmbeddingSpace { fingerprint, dimension }` is a first-class type: the
+canonical identity of a vector space (for `ApiEmbedder`: versioned
+`api-space-v1|endpoint=…|model=…|dimension=…`, normalized trailing slashes,
+never the API key). Three parties persist or carry it, and all three must
+agree exactly before a library can operate:
+
+1. **SQLite** (authoritative): schema v3 adds a `library_metadata` singleton
+   storing the bound space. The first stored projection binds it — inside
+   the same transaction as the write, closing the check-then-write race —
+   and every later projection must match exactly. Removing documents (even
+   all of them) never unbinds; equal dimensions never imply compatibility.
+2. **The configured `Embedder`**: `Library::new` refuses construction when
+   the store is bound to a different space, so search, ingest, and rebuild
+   are all unreachable under a mismatched model — no document needs to be
+   re-ingested for the mismatch to surface.
+3. **The usearch manifest** (derived): manifest v2 and the keymap sidecar
+   record the space fingerprint. `UsearchIndex` is constructed *for* a
+   space, `load` validates disk artifacts against it and never adopts the
+   on-disk dimension or fingerprint.
+
+`rebuild-index` repairs derived-index loss or corruption **within one
+space**; it re-checks the store binding and refuses to "repair" across
+models — rebuilding cannot convert stored embeddings between models. A
+model change requires reconfiguring the original model, or a new library
+and re-ingestion (an explicit re-embedding migration remains future work).
+
+Legacy stores (schema ≤ 2) migrate with the binding unset. If durable
+embeddings exist, their model identity is unverifiable and the library
+**fails closed** with a migration diagnostic; it never silently labels
+legacy vectors with the currently configured model. An unbound store with
+no embeddings binds normally on first use.
+
+### A6. Query vectors are validated like ingest vectors
+
+`embedder::validate_embedding_batch` (count, per-vector dimension,
+finiteness) now guards both trait-output boundaries: document ingestion and
+query embedding. A query returning zero vectors, extra vectors, a wrong
+dimension, or NaN/±∞ is rejected before usearch sees it; extra vectors are
+an error, never silently discarded. `UsearchIndex::search` independently
+rejects non-finite query values (defense in depth — `VectorIndex` is a
+public boundary callable without `Library`).
+
+### A7. Keymaps cannot silently collapse
+
+Loading a parseable-but-corrupt keymap previously collected entries into
+maps, which silently deduplicate. Load now rejects duplicate `u64` keys,
+duplicate chunk IDs, any key at or above the persisted `next_key`, an
+entry count disagreeing with the manifest, and a sidecar whose space
+fingerprint differs from the manifest's. Corruption diagnostics point at
+`nucklavee rebuild-index`; a space mismatch gets a distinct diagnostic
+because rebuilding will not fix it. (usearch exposes no safe per-key
+containment check on a loaded index, so sidecar keys are verified against
+the loaded index by total count only — a documented limitation.)
+
 ## Consequences
 
 - Backup = copy the SQLite file. The index manifest and its generation
@@ -167,7 +243,12 @@ recall invisibly).
   malformed-embedder rejection, rebuild-without-re-embedding) and
   `tests/cli.rs` (recovery from corrupt/missing index files).
 - Schema is versioned via `PRAGMA user_version` with stepwise migrations
-  (currently v2: adds `chunk_embeddings` and the unique
-  `(document_id, sequence_index)` index).
-- Index files from before the manifest layout do not load; the recovery is
-  the designed one — `nucklavee rebuild-index`.
+  (currently v3: v2 adds `chunk_embeddings` and the unique
+  `(document_id, sequence_index)` index; v3 adds the `library_metadata`
+  embedding-space singleton).
+- Index files from before the current manifest layout (manifest v2) do not
+  load; the recovery is the designed one — `nucklavee rebuild-index` under
+  the same embedding space.
+- A configured-model change is rejected before any search or mutation; the
+  remedies are reconfiguring the original model or re-ingesting into a new
+  library. `rebuild-index` is never a model-migration tool.
