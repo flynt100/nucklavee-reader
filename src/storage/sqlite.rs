@@ -18,12 +18,15 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::chunking::{Chunk, ChunkId};
+use crate::embedder::EmbeddingSpace;
 use crate::ir::{Document, DocumentId, DocumentMeta};
-use crate::storage::{DocumentStore, validate_projection};
+use crate::storage::{DocumentStore, check_space_binding, validate_projection};
 use crate::{Error, Result};
 
 /// Current schema version, tracked in `PRAGMA user_version`.
-const SCHEMA_VERSION: i64 = 2;
+/// v3 adds the `library_metadata` singleton binding the library to one
+/// embedding space.
+const SCHEMA_VERSION: i64 = 3;
 
 #[derive(Clone)]
 pub struct SqliteDocumentStore {
@@ -118,9 +121,65 @@ fn migrate(conn: &Connection) -> Result<()> {
         .map_err(sqlite_err)?;
     }
 
+    if version < 3 {
+        // The singleton row starts unbound (NULLs). A pre-v3 store that
+        // already holds embeddings therefore migrates to "unbound with
+        // embeddings" — the fail-closed legacy state: those vectors' model
+        // identity cannot be inferred, so `Library` construction refuses it
+        // rather than silently labeling them with the configured model.
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS library_metadata (
+                singleton                    INTEGER PRIMARY KEY CHECK (singleton = 1),
+                embedding_space_fingerprint  TEXT,
+                embedding_dimension          INTEGER
+            );
+
+            INSERT OR IGNORE INTO library_metadata (
+                singleton,
+                embedding_space_fingerprint,
+                embedding_dimension
+            ) VALUES (1, NULL, NULL);
+            "#,
+        )
+        .map_err(sqlite_err)?;
+    }
+
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)
         .map_err(sqlite_err)?;
     Ok(())
+}
+
+/// Read the bound embedding space within an existing connection/transaction.
+fn read_embedding_space(conn: &Connection) -> Result<Option<EmbeddingSpace>> {
+    let row: Option<(Option<String>, Option<i64>)> = conn
+        .query_row(
+            "SELECT embedding_space_fingerprint, embedding_dimension
+             FROM library_metadata WHERE singleton = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(sqlite_err)?;
+    match row {
+        None | Some((None, None)) => Ok(None),
+        Some((Some(fingerprint), Some(dimension))) => {
+            let dimension = usize::try_from(dimension).map_err(|_| {
+                Error::Storage(format!(
+                    "library_metadata records an invalid embedding dimension ({dimension})"
+                ))
+            })?;
+            Ok(Some(EmbeddingSpace {
+                fingerprint,
+                dimension,
+            }))
+        }
+        Some(_) => Err(Error::Consistency(
+            "library_metadata is half-bound (one of fingerprint/dimension is NULL); \
+             the database is damaged"
+                .to_string(),
+        )),
+    }
 }
 
 impl DocumentStore for SqliteDocumentStore {
@@ -198,19 +257,50 @@ impl DocumentStore for SqliteDocumentStore {
         Ok(())
     }
 
+    fn embedding_space(&self) -> Result<Option<EmbeddingSpace>> {
+        let conn = self.lock()?;
+        read_embedding_space(&conn)
+    }
+
+    fn has_embeddings(&self) -> Result<bool> {
+        let conn = self.lock()?;
+        conn.query_row("SELECT EXISTS(SELECT 1 FROM chunk_embeddings)", [], |row| {
+            row.get(0)
+        })
+        .map_err(sqlite_err)
+    }
+
     fn replace_document_projection(
         &self,
         document: &Document,
         chunks: &[Chunk],
         embeddings: &[Vec<f32>],
+        embedding_space: &EmbeddingSpace,
     ) -> Result<()> {
-        validate_projection(document, chunks, embeddings)?;
+        validate_projection(document, chunks, embeddings, embedding_space)?;
 
         let doc_json = serde_json::to_string(document).map_err(json_err)?;
         let format = format!("{:?}", document.meta.format);
 
         let mut conn = self.lock()?;
         let tx = conn.transaction().map_err(sqlite_err)?;
+
+        // Bind-or-verify the library's space inside the same transaction as
+        // the projection write, so no concurrent writer can slip a different
+        // space in between the check and the mutation.
+        let bound = read_embedding_space(&tx)?;
+        if check_space_binding(bound.as_ref(), embedding_space)? {
+            tx.execute(
+                "UPDATE library_metadata
+                 SET embedding_space_fingerprint = ?1, embedding_dimension = ?2
+                 WHERE singleton = 1",
+                params![
+                    embedding_space.fingerprint,
+                    embedding_space.dimension as i64
+                ],
+            )
+            .map_err(sqlite_err)?;
+        }
 
         tx.execute(
             r#"INSERT INTO documents

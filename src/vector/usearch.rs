@@ -26,15 +26,20 @@ use serde::{Deserialize, Serialize};
 use usearch::{Index, IndexOptions, MetricKind, ScalarKind};
 
 use crate::chunking::ChunkId;
+use crate::embedder::{Embedder, EmbeddingSpace};
 use crate::vector::VectorIndex;
 use crate::{Error, Result};
 
 /// Manifest format version (the file at the caller-supplied index path).
-const MANIFEST_VERSION: u32 = 1;
+/// v2 adds the embedding-space fingerprint to the manifest and the keymap
+/// sidecar; v1 manifests no longer load.
+const MANIFEST_VERSION: u32 = 2;
 
 pub struct UsearchIndex {
     index: Index,
-    dimension: usize,
+    /// Immutable for the lifetime of the index; `load` validates persisted
+    /// artifacts against it and never adopts what it finds on disk.
+    space: EmbeddingSpace,
     next_key: u64,
     key_to_id: HashMap<u64, ChunkId>,
     id_to_key: HashMap<ChunkId, u64>,
@@ -48,6 +53,7 @@ pub struct UsearchIndex {
 struct Manifest {
     version: u32,
     generation: String,
+    embedding_space_fingerprint: String,
     dimension: usize,
     entry_count: usize,
 }
@@ -57,6 +63,9 @@ struct KeyMapSidecar {
     /// Must match the manifest's generation — a mismatch means the artifacts
     /// come from different saves and must not be combined.
     generation: String,
+    /// Must match the manifest's fingerprint, so all three artifacts can be
+    /// cross-checked for one embedding space.
+    embedding_space_fingerprint: String,
     dimension: usize,
     next_key: u64,
     /// `(u64 key, chunk id)` pairs.
@@ -64,12 +73,12 @@ struct KeyMapSidecar {
 }
 
 impl UsearchIndex {
-    /// Create an empty cosine-metric index for vectors of `dimension`.
-    pub fn new(dimension: usize) -> Result<Self> {
-        let index = build_index(dimension)?;
+    /// Create an empty cosine-metric index bound to `space` for its lifetime.
+    pub fn new(space: EmbeddingSpace) -> Result<Self> {
+        let index = build_index(space.dimension)?;
         Ok(Self {
             index,
-            dimension,
+            space,
             next_key: 0,
             key_to_id: HashMap::new(),
             id_to_key: HashMap::new(),
@@ -77,8 +86,13 @@ impl UsearchIndex {
         })
     }
 
+    /// Convenience constructor: an empty index for `embedder`'s vector space.
+    pub fn for_embedder(embedder: &impl Embedder) -> Result<Self> {
+        Self::new(embedder.embedding_space())
+    }
+
     pub fn dimension(&self) -> usize {
-        self.dimension
+        self.space.dimension
     }
 
     pub fn len(&self) -> usize {
@@ -157,13 +171,17 @@ fn path_str(path: &Path) -> Result<&str> {
 }
 
 impl VectorIndex for UsearchIndex {
+    fn embedding_space(&self) -> &EmbeddingSpace {
+        &self.space
+    }
+
     fn add(&mut self, id: ChunkId, vector: Vec<f32>) -> Result<()> {
         // Reject every predictable failure *before* mutating valid state.
-        if vector.len() != self.dimension {
+        if vector.len() != self.space.dimension {
             return Err(Error::VectorIndex(format!(
                 "vector dimension {} does not match index dimension {}",
                 vector.len(),
-                self.dimension
+                self.space.dimension
             )));
         }
         if let Some(bad) = vector.iter().find(|v| !v.is_finite()) {
@@ -210,11 +228,19 @@ impl VectorIndex for UsearchIndex {
     }
 
     fn search(&self, query: &[f32], limit: usize) -> Result<Vec<(ChunkId, f32)>> {
-        if query.len() != self.dimension {
+        if query.len() != self.space.dimension {
             return Err(Error::VectorIndex(format!(
                 "query dimension {} does not match index dimension {}",
                 query.len(),
-                self.dimension
+                self.space.dimension
+            )));
+        }
+        // Defense-in-depth: `VectorIndex` is a public trait boundary and may
+        // be called without `Library`'s query validation in front of it —
+        // never hand usearch non-finite values.
+        if let Some(bad) = query.iter().find(|v| !v.is_finite()) {
+            return Err(Error::VectorIndex(format!(
+                "query vector contains a non-finite value ({bad})"
             )));
         }
         if limit == 0 || self.is_empty() {
@@ -236,7 +262,7 @@ impl VectorIndex for UsearchIndex {
     }
 
     fn clear(&mut self) -> Result<()> {
-        self.index = build_index(self.dimension)?;
+        self.index = build_index(self.space.dimension)?;
         self.key_to_id.clear();
         self.id_to_key.clear();
         self.next_key = 0;
@@ -258,7 +284,8 @@ impl VectorIndex for UsearchIndex {
 
         let sidecar = KeyMapSidecar {
             generation: generation.clone(),
-            dimension: self.dimension,
+            embedding_space_fingerprint: self.space.fingerprint.clone(),
+            dimension: self.space.dimension,
             next_key: self.next_key,
             entries: self.key_to_id.iter().map(|(k, id)| (*k, *id)).collect(),
         };
@@ -270,7 +297,8 @@ impl VectorIndex for UsearchIndex {
         let manifest = Manifest {
             version: MANIFEST_VERSION,
             generation: generation.clone(),
-            dimension: self.dimension,
+            embedding_space_fingerprint: self.space.fingerprint.clone(),
+            dimension: self.space.dimension,
             entry_count: self.id_to_key.len(),
         };
         let manifest_json = serde_json::to_string(&manifest)
@@ -303,8 +331,30 @@ impl VectorIndex for UsearchIndex {
         })?;
         if manifest.version != MANIFEST_VERSION {
             return Err(Error::VectorIndex(format!(
-                "index manifest version {} is not supported (expected {MANIFEST_VERSION})",
+                "index manifest version {} is not supported (expected \
+                 {MANIFEST_VERSION}); rebuild the index from the store \
+                 (CLI: `nucklavee rebuild-index`)",
                 manifest.version
+            )));
+        }
+
+        // The persisted index must belong to this index's configured space.
+        // A mismatch is NOT corruption: rebuild-index with the new model
+        // cannot convert stored vectors between models, so it gets a
+        // distinct diagnostic rather than the rebuild pointer.
+        if manifest.embedding_space_fingerprint != self.space.fingerprint
+            || manifest.dimension != self.space.dimension
+        {
+            return Err(Error::EmbeddingSpaceMismatch(format!(
+                "the persisted index at '{}' holds vectors from the embedding \
+                 space {} (dimension {}), but this index is configured for {}. \
+                 Rebuilding under the configured model cannot convert them; \
+                 reconfigure the original model or create a new library and \
+                 re-ingest the documents",
+                path.display(),
+                manifest.embedding_space_fingerprint,
+                manifest.dimension,
+                self.space
             )));
         }
 
@@ -314,45 +364,88 @@ impl VectorIndex for UsearchIndex {
         let sidecar: KeyMapSidecar = serde_json::from_str(&sidecar_raw)
             .map_err(|e| Error::VectorIndex(format!("keymap parse failed: {e}")))?;
 
-        // All three artifacts must describe the same generation and shape.
+        // All three artifacts must describe the same generation, space, and
+        // shape. Failures here are index corruption: the store is
+        // authoritative, so the repair is `nucklavee rebuild-index`.
+        let corrupt = |detail: String| {
+            Error::VectorIndex(format!(
+                "{detail}; the index artifacts are inconsistent — rebuild the \
+                 index from the store (CLI: `nucklavee rebuild-index`)"
+            ))
+        };
         if sidecar.generation != manifest.generation {
-            return Err(Error::VectorIndex(format!(
+            return Err(corrupt(format!(
                 "keymap generation '{}' does not match manifest generation '{}' \
                  — mixed-generation index artifacts must not be combined",
                 sidecar.generation, manifest.generation
             )));
         }
+        if sidecar.embedding_space_fingerprint != manifest.embedding_space_fingerprint {
+            return Err(corrupt(format!(
+                "keymap embedding-space fingerprint '{}' does not match the \
+                 manifest's '{}'",
+                sidecar.embedding_space_fingerprint, manifest.embedding_space_fingerprint
+            )));
+        }
         if sidecar.dimension != manifest.dimension {
-            return Err(Error::VectorIndex(format!(
+            return Err(corrupt(format!(
                 "keymap dimension {} does not match manifest dimension {}",
                 sidecar.dimension, manifest.dimension
             )));
         }
         if sidecar.entries.len() != manifest.entry_count {
-            return Err(Error::VectorIndex(format!(
+            return Err(corrupt(format!(
                 "keymap has {} entries but the manifest records {}",
                 sidecar.entries.len(),
                 manifest.entry_count
             )));
         }
 
-        // Rebuild the index at the persisted dimension, then load vectors.
-        let index = build_index(sidecar.dimension)?;
+        // A corrupt-but-parseable keymap must not silently collapse into
+        // smaller maps: every key and every chunk ID must be unique, and the
+        // key allocator must be strictly ahead of every persisted key.
+        let mut key_to_id: HashMap<u64, ChunkId> = HashMap::with_capacity(sidecar.entries.len());
+        let mut id_to_key: HashMap<ChunkId, u64> = HashMap::with_capacity(sidecar.entries.len());
+        for (key, id) in &sidecar.entries {
+            if *key >= sidecar.next_key {
+                return Err(corrupt(format!(
+                    "keymap key {key} is not below next_key {} — the key \
+                     allocator state is invalid",
+                    sidecar.next_key
+                )));
+            }
+            if key_to_id.insert(*key, *id).is_some() {
+                return Err(corrupt(format!("keymap contains duplicate key {key}")));
+            }
+            if id_to_key.insert(*id, *key).is_some() {
+                return Err(corrupt(format!("keymap contains duplicate chunk id {id}")));
+            }
+        }
+        // With per-insert duplicate rejection above, both maps provably hold
+        // exactly entries.len() elements — no collection shrank.
+        debug_assert_eq!(key_to_id.len(), sidecar.entries.len());
+        debug_assert_eq!(id_to_key.len(), sidecar.entries.len());
+        // usearch does not expose a safe per-key containment check on a
+        // loaded index, so sidecar keys are verified against the index only
+        // by total count (below), not individually.
+
+        // Rebuild the index at the CONFIGURED dimension (already proven equal
+        // to the manifest's), then load vectors.
+        let index = build_index(self.space.dimension)?;
         index
             .load(path_str(&index_path)?)
             .map_err(|e| Error::VectorIndex(format!("usearch load failed: {e}")))?;
         if index.size() != manifest.entry_count {
-            return Err(Error::VectorIndex(format!(
+            return Err(corrupt(format!(
                 "loaded index holds {} vectors but the manifest records {}",
                 index.size(),
                 manifest.entry_count
             )));
         }
 
-        self.key_to_id = sidecar.entries.iter().copied().collect();
-        self.id_to_key = sidecar.entries.iter().map(|(k, id)| (*id, *k)).collect();
+        self.key_to_id = key_to_id;
+        self.id_to_key = id_to_key;
         self.next_key = sidecar.next_key;
-        self.dimension = sidecar.dimension;
         self.capacity = index.size();
         self.index = index;
         Ok(())

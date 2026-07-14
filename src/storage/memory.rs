@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::Result;
 use crate::chunking::{Chunk, ChunkId};
+use crate::embedder::EmbeddingSpace;
 use crate::ir::{Document, DocumentId, DocumentMeta};
-use crate::storage::{DocumentStore, validate_projection};
+use crate::storage::{DocumentStore, check_space_binding, validate_projection};
 
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryDocumentStore {
@@ -16,6 +17,9 @@ struct InMemoryState {
     documents: HashMap<DocumentId, Document>,
     chunks_by_doc: HashMap<DocumentId, Vec<Chunk>>,
     embeddings: HashMap<ChunkId, Vec<f32>>,
+    /// Bound by the first stored projection; never silently rebound, even
+    /// after the last document is removed (mirrors the SQLite backend).
+    embedding_space: Option<EmbeddingSpace>,
 }
 
 impl InMemoryDocumentStore {
@@ -65,14 +69,30 @@ impl DocumentStore for InMemoryDocumentStore {
         Ok(())
     }
 
+    fn embedding_space(&self) -> Result<Option<EmbeddingSpace>> {
+        Ok(self.state()?.embedding_space.clone())
+    }
+
+    fn has_embeddings(&self) -> Result<bool> {
+        Ok(!self.state()?.embeddings.is_empty())
+    }
+
     fn replace_document_projection(
         &self,
         document: &Document,
         chunks: &[Chunk],
         embeddings: &[Vec<f32>],
+        embedding_space: &EmbeddingSpace,
     ) -> Result<()> {
-        validate_projection(document, chunks, embeddings)?;
+        validate_projection(document, chunks, embeddings, embedding_space)?;
         let mut state = self.state()?;
+
+        // Bind-or-verify the store's space under the same lock as the write,
+        // mirroring the SQLite transaction: a mismatch rejects before any
+        // mutation.
+        if check_space_binding(state.embedding_space.as_ref(), embedding_space)? {
+            state.embedding_space = Some(embedding_space.clone());
+        }
 
         // Retire the previous generation's embeddings before installing the
         // new set, mirroring the SQLite transaction.

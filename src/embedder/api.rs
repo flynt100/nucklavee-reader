@@ -181,10 +181,16 @@ impl Embedder for ApiEmbedder {
     /// spaces across providers and models. The API key is deliberately
     /// excluded — it does not affect the vector space and must not be
     /// persisted.
+    ///
+    /// The descriptor is versioned (`api-space-v1`) so a future format change
+    /// cannot collide with today's identities. Inconsequential trailing
+    /// slashes on the endpoint are normalized away; meaningful path
+    /// differences are preserved.
     fn fingerprint(&self) -> String {
+        let endpoint = self.config.endpoint.trim_end_matches('/');
         format!(
-            "api|endpoint={}|model={}|dim={}",
-            self.config.endpoint, self.config.model, self.config.dimension
+            "api-space-v1|endpoint={}|model={}|dimension={}",
+            endpoint, self.config.model, self.config.dimension
         )
     }
 }

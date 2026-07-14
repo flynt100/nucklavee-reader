@@ -61,18 +61,25 @@ fn run() -> Result<()> {
 }
 
 fn build_library(cfg: &Config, load_existing_index: bool) -> Result<Lib> {
-    let store = SqliteDocumentStore::open(&cfg.storage.database)?;
-    let mut index = UsearchIndex::new(cfg.embedding.dimension)?;
+    // Construction order matters: the embedder is built first because its
+    // embedding space configures the index; the persisted index is then
+    // loaded against that expected space (never adopting whatever is on
+    // disk), and `Library::new` finally cross-checks the store's binding.
+    let embedder = ApiEmbedder::new(cfg.embedder_config())?;
+    let mut index = UsearchIndex::for_embedder(&embedder)?;
     if load_existing_index && cfg.storage.vector_index.exists() {
-        index.load(&cfg.storage.vector_index).map_err(|e| {
-            Error::VectorIndex(format!(
-                "vector index at '{}' failed to load: {e}; run `nucklavee \
+        index.load(&cfg.storage.vector_index).map_err(|e| match e {
+            // A wrong-space index is not corruption; `rebuild-index` cannot
+            // convert models, so don't point at it.
+            Error::EmbeddingSpaceMismatch(_) => e,
+            other => Error::VectorIndex(format!(
+                "vector index at '{}' failed to load: {other}; run `nucklavee \
                  rebuild-index` to rebuild it from the document store",
                 cfg.storage.vector_index.display()
-            ))
+            )),
         })?;
     }
-    let embedder = ApiEmbedder::new(cfg.embedder_config())?;
+    let store = SqliteDocumentStore::open(&cfg.storage.database)?;
     Library::new(store, index, embedder)
 }
 

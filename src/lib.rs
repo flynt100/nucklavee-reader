@@ -59,9 +59,54 @@ where
     V: vector::VectorIndex,
     E: embedder::Embedder,
 {
-    /// Construct a library. Loads the chunker's tokenizer, so this is
-    /// fallible.
+    /// Construct a library. Fallible for two reasons: it loads the chunker's
+    /// tokenizer, and it enforces the collection-wide embedding-space
+    /// invariant — the configured embedder, the store's bound space, and the
+    /// vector index must all describe one vector space, checked here so a
+    /// mismatched library cannot even be constructed (per-document
+    /// fingerprints never see a search-only session).
     pub fn new(store: S, index: V, embedder: E) -> Result<Self> {
+        let configured = embedder.embedding_space();
+
+        if *index.embedding_space() != configured {
+            return Err(Error::EmbeddingSpaceMismatch(format!(
+                "the vector index is configured for the embedding space {}, \
+                 but the embedder produces {}. Construct the index from the \
+                 same embedder configuration",
+                index.embedding_space(),
+                configured
+            )));
+        }
+
+        match store.embedding_space()? {
+            Some(bound) if bound != configured => {
+                return Err(Error::EmbeddingSpaceMismatch(format!(
+                    "this library's stored embeddings belong to the embedding \
+                     space {bound}, but the configured embedder produces \
+                     {configured}. Rebuild-index cannot convert embeddings \
+                     between models; reconfigure the original model or create \
+                     a new library and re-ingest the documents"
+                )));
+            }
+            Some(_) => {}
+            None => {
+                // Unbound metadata with durable embeddings means the store
+                // predates space tracking (schema < 3). Those vectors' model
+                // identity cannot be verified, so fail closed instead of
+                // adopting the configured model for them.
+                if store.has_embeddings()? {
+                    return Err(Error::Consistency(
+                        "this library contains legacy embeddings without \
+                         vector-space metadata; their model identity cannot \
+                         be verified. Create a new library and re-ingest the \
+                         documents, or run an explicit embedding migration \
+                         when one is available"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+
         Ok(Self {
             store,
             index,
@@ -198,18 +243,16 @@ where
         } else {
             let texts: Vec<&str> = chunks.iter().map(|c| c.content.as_str()).collect();
             let vectors = self.embedder.embed(&texts)?;
-            if vectors.len() != chunks.len() {
-                return Err(Error::Embedding(format!(
-                    "embedder returned {} vectors for {} chunks",
-                    vectors.len(),
-                    chunks.len()
-                )));
-            }
             // The store is authoritative and the index is rebuilt from it, so
             // every persisted embedding must be valid for the configured
             // index — regardless of which Embedder implementation produced
             // it. Rejecting here keeps invalid vectors out of SQLite.
-            validate_embeddings(&vectors, self.embedder.dimension())?;
+            embedder::validate_embedding_batch(
+                &vectors,
+                chunks.len(),
+                &self.embedder.embedding_space(),
+                "document ingestion",
+            )?;
             vectors
         };
 
@@ -230,8 +273,12 @@ where
         // is the derived index touched, so a failure anywhere in index
         // maintenance leaves the store correct and is repairable by
         // `rebuild_index()`.
-        self.store
-            .replace_document_projection(&doc, &chunks, &vectors)?;
+        self.store.replace_document_projection(
+            &doc,
+            &chunks,
+            &vectors,
+            &self.embedder.embedding_space(),
+        )?;
 
         let consistency = |e: Error| {
             Error::Consistency(format!(
@@ -261,6 +308,23 @@ where
     /// after a successful rebuild), so a failed rebuild never damages the
     /// on-disk generation.
     pub fn rebuild_index(&mut self) -> Result<usize> {
+        // Construction already proved store/index/embedder agree, but rebuild
+        // re-checks the store's binding: a rebuild moves durable embeddings
+        // into the index wholesale, and must never launder another model's
+        // vectors into the configured space.
+        let configured = self.embedder.embedding_space();
+        match self.store.embedding_space()? {
+            Some(bound) if bound != configured => {
+                return Err(Error::EmbeddingSpaceMismatch(format!(
+                    "cannot rebuild: the store's durable embeddings belong to \
+                     the embedding space {bound}, but the configured embedder \
+                     produces {configured}. Rebuilding cannot convert \
+                     embeddings between models; reconfigure the original \
+                     model or create a new library and re-ingest the documents"
+                )));
+            }
+            _ => {}
+        }
         self.index.clear()?;
         let pairs = self.store.get_all_embeddings()?;
         let count = pairs.len();
@@ -281,13 +345,19 @@ where
         if limit == 0 {
             return Ok(Vec::new());
         }
-        let query_vector = self
-            .embedder
-            .embed(&[text])?
-            .into_iter()
-            .next()
-            .ok_or_else(|| Error::Embedding("embedder returned no vector for query".to_string()))?;
-        let hits = self.index.search(&query_vector, limit)?;
+        // Query vectors cross the same trust boundary as ingest vectors: an
+        // arbitrary Embedder may return the wrong count, a wrong dimension,
+        // or non-finite values, and none of that may reach usearch. Extra
+        // vectors are an error, never silently discarded.
+        let vectors = self.embedder.embed(&[text])?;
+        embedder::validate_embedding_batch(
+            &vectors,
+            1,
+            &self.embedder.embedding_space(),
+            "query embedding",
+        )?;
+        let query_vector = &vectors[0];
+        let hits = self.index.search(query_vector, limit)?;
         let ids: Vec<chunking::ChunkId> = hits.into_iter().map(|(id, _)| id).collect();
         self.store.get_chunks_by_ids(&ids)
     }
@@ -439,30 +509,6 @@ fn processing_fingerprint<E: embedder::Embedder>(
     parsers::sha256_hex(&canonical)
 }
 
-/// Reject embedder output that cannot legally enter the authoritative store:
-/// wrong-dimension vectors or non-finite values. The `ApiEmbedder` validates
-/// its own provider responses, but the `Embedder` trait accepts arbitrary
-/// implementations — this is the boundary that guarantees every persisted
-/// embedding can rebuild the configured index.
-fn validate_embeddings(vectors: &[Vec<f32>], expected_dimension: usize) -> Result<()> {
-    for (i, vector) in vectors.iter().enumerate() {
-        if vector.len() != expected_dimension {
-            return Err(Error::Embedding(format!(
-                "embedder returned a vector of dimension {} for chunk {i}, \
-                 expected {expected_dimension}",
-                vector.len()
-            )));
-        }
-        if let Some(bad) = vector.iter().find(|v| !v.is_finite()) {
-            return Err(Error::Embedding(format!(
-                "embedder returned a non-finite value ({bad}) in the vector \
-                 for chunk {i}"
-            )));
-        }
-    }
-    Ok(())
-}
-
 /// Rewrite a parsed document's identity to `id`, including the document ID
 /// recorded in every block's provenance, so reprocessing existing content
 /// keeps a stable logical document.
@@ -544,6 +590,15 @@ pub enum Error {
     /// Directs the operator toward verification or `rebuild_index`.
     #[error("consistency error: {0}")]
     Consistency(String),
+
+    /// The configured embedder's vector space does not match the space bound
+    /// to the store or the persisted index. Distinct from `Consistency`
+    /// because the remedy differs: `rebuild-index` repairs derived-index
+    /// corruption but can never convert stored embeddings between models —
+    /// the fix is reconfiguring the original model or re-ingesting into a
+    /// new library.
+    #[error("embedding-space mismatch: {0}")]
+    EmbeddingSpaceMismatch(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

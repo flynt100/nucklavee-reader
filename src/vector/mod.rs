@@ -2,11 +2,18 @@ use std::path::Path;
 
 use crate::Result;
 use crate::chunking::ChunkId;
+use crate::embedder::EmbeddingSpace;
 
 /// Vector index contract (frozen 2026-07-06; see
-/// `docs/ir-deltas-from-spec.md`). One index file lives alongside the
-/// document store; `save`/`load` handle its persistence.
+/// `docs/ir-deltas-from-spec.md`; embedding-space binding added 2026-07-14
+/// stabilization gate). One index file lives alongside the document store;
+/// `save`/`load` handle its persistence.
 pub trait VectorIndex {
+    /// The single vector space this index holds. Immutable for the life of
+    /// the index: `load` validates persisted artifacts against it and never
+    /// adopts whatever is found on disk.
+    fn embedding_space(&self) -> &EmbeddingSpace;
+
     /// Add or replace a chunk's vector. Replacement keeps the previous vector
     /// searchable until the new one is committed — a failed replacement must
     /// not lose the old value.
