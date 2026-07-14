@@ -106,12 +106,14 @@ impl Fixture {
     }
 
     /// (Re)write the config for a given embedding model — simulates an
-    /// operator changing models between invocations.
+    /// operator changing models between invocations. Paths use TOML literal
+    /// (single-quoted) strings: Windows paths contain backslashes, which
+    /// basic (double-quoted) TOML strings would treat as escape sequences.
     fn set_model(&self, model: &str) {
         std::fs::write(
             &self.config,
             format!(
-                "[storage]\ndatabase = \"{}\"\nvector_index = \"{}\"\n\n[embedding]\nendpoint = \"{}\"\nmodel = \"{model}\"\ndimension = {}\nuse_env_proxy = false\n",
+                "[storage]\ndatabase = '{}'\nvector_index = '{}'\n\n[embedding]\nendpoint = \"{}\"\nmodel = \"{model}\"\ndimension = {}\nuse_env_proxy = false\n",
                 self.db.display(),
                 self.index.display(),
                 self.endpoint,
