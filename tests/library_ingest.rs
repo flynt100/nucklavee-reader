@@ -10,7 +10,7 @@ use nucklavee::{Format, Library};
 fn library() -> Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder> {
     Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library")
@@ -20,7 +20,7 @@ fn library() -> Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder> {
 fn reingesting_identical_content_returns_existing_document_id() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");
@@ -44,7 +44,7 @@ fn reingesting_identical_content_returns_existing_document_id() {
 fn differing_content_gets_distinct_document_ids() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");

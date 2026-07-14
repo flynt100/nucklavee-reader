@@ -40,3 +40,6 @@ serde_json = "1.0.150"
 # Self dev-dependency: enables test-support for this crate's own tests
 # without shipping it in default builds.
 nucklavee = { path = ".", features = ["test-support"] }
+# Tests craft legacy (pre-v3) databases directly to prove fail-closed
+# migration behavior.
+rusqlite = { version = "0.32", features = ["bundled"] }

@@ -86,7 +86,7 @@ fn html_emit_escapes_and_maps_styles() {
 fn library_emits_html_format() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");

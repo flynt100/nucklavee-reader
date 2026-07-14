@@ -114,7 +114,7 @@ fn library_ingests_url_and_preserves_final_url_as_provenance() {
 
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");

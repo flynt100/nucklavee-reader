@@ -11,10 +11,15 @@ use nucklavee::vector::usearch::UsearchIndex;
 
 const DIM: usize = 256;
 
+/// Empty usearch index matching `HashEmbedder::new(DIM)`'s space.
+fn hash_index() -> UsearchIndex {
+    UsearchIndex::for_embedder(&HashEmbedder::new(DIM)).expect("usearch index")
+}
+
 fn library() -> Library<InMemoryDocumentStore, UsearchIndex, HashEmbedder> {
     Library::new(
         InMemoryDocumentStore::default(),
-        UsearchIndex::new(DIM).expect("usearch index"),
+        hash_index(),
         HashEmbedder::new(DIM),
     )
     .expect("build library")
@@ -151,7 +156,6 @@ fn dedupe_does_not_double_index() {
 
 // --- reliability regression scenarios (external review, 2026-07-13) ---------
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use nucklavee::embedder::Embedder;
@@ -187,7 +191,7 @@ fn failed_embedding_leaves_no_partial_document_and_retry_succeeds() {
     let store = InMemoryDocumentStore::default();
     let mut lib = Library::new(
         store.clone(),
-        UsearchIndex::new(DIM).expect("index"),
+        hash_index(),
         FlakyEmbedder {
             inner: HashEmbedder::new(DIM),
             calls: AtomicUsize::new(0),
@@ -228,12 +232,8 @@ fn failed_embedding_leaves_no_partial_document_and_retry_succeeds() {
 #[test]
 fn same_content_different_options_reprocesses_with_stable_identity() {
     let store = InMemoryDocumentStore::default();
-    let mut lib = Library::new(
-        store.clone(),
-        UsearchIndex::new(DIM).expect("index"),
-        HashEmbedder::new(DIM),
-    )
-    .expect("build library");
+    let mut lib =
+        Library::new(store.clone(), hash_index(), HashEmbedder::new(DIM)).expect("build library");
 
     use nucklavee::storage::DocumentStore;
 
@@ -320,24 +320,16 @@ fn index_rebuilds_from_durable_embeddings_without_reembedding() {
 
     // Ingest normally.
     {
-        let mut lib = Library::new(
-            store.clone(),
-            UsearchIndex::new(DIM).expect("index"),
-            HashEmbedder::new(DIM),
-        )
-        .expect("build library");
+        let mut lib = Library::new(store.clone(), hash_index(), HashEmbedder::new(DIM))
+            .expect("build library");
         lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest");
     }
 
     // Fresh empty index (simulates a missing/corrupt index file) + an
     // embedder that panics if consulted: rebuild must restore search purely
     // from the store's durable embeddings.
-    let mut lib = Library::new(
-        store.clone(),
-        UsearchIndex::new(DIM).expect("fresh index"),
-        ForbiddenEmbedder,
-    )
-    .expect("build library");
+    let mut lib =
+        Library::new(store.clone(), hash_index(), ForbiddenEmbedder).expect("build library");
 
     let restored = lib.rebuild_index().expect("rebuild");
     assert!(restored > 0, "rebuild indexed the stored embeddings");
@@ -345,12 +337,8 @@ fn index_rebuilds_from_durable_embeddings_without_reembedding() {
     // Query embeds via HashEmbedder externally to avoid the forbidden one.
     // Instead, verify through a HashEmbedder-backed library sharing state.
     drop(lib);
-    let mut rebuilt = Library::new(
-        store.clone(),
-        UsearchIndex::new(DIM).expect("index"),
-        HashEmbedder::new(DIM),
-    )
-    .expect("build");
+    let mut rebuilt =
+        Library::new(store.clone(), hash_index(), HashEmbedder::new(DIM)).expect("build");
     rebuilt.rebuild_index().expect("rebuild");
     let hits = rebuilt
         .query("ocean salt water tides moon", 3)
@@ -365,12 +353,7 @@ fn index_rebuilds_from_durable_embeddings_without_reembedding() {
 #[test]
 fn oversized_first_result_does_not_starve_later_results() {
     let store = InMemoryDocumentStore::default();
-    let mut lib = Library::new(
-        store,
-        UsearchIndex::new(DIM).expect("index"),
-        HashEmbedder::new(DIM),
-    )
-    .expect("build library");
+    let mut lib = Library::new(store, hash_index(), HashEmbedder::new(DIM)).expect("build library");
 
     // The "big" section repeats the query vocabulary heavily so it ranks
     // first; the "small" section shares the vocabulary but is tiny.
@@ -420,13 +403,20 @@ impl nucklavee::storage::DocumentStore for BrokenDocLookupStore {
     fn remove_document(&self, id: nucklavee::DocumentId) -> nucklavee::Result<()> {
         self.inner.remove_document(id)
     }
+    fn embedding_space(&self) -> nucklavee::Result<Option<nucklavee::embedder::EmbeddingSpace>> {
+        self.inner.embedding_space()
+    }
+    fn has_embeddings(&self) -> nucklavee::Result<bool> {
+        self.inner.has_embeddings()
+    }
     fn replace_document_projection(
         &self,
         d: &nucklavee::Document,
         c: &[nucklavee::Chunk],
         e: &[Vec<f32>],
+        s: &nucklavee::embedder::EmbeddingSpace,
     ) -> nucklavee::Result<()> {
-        self.inner.replace_document_projection(d, c, e)
+        self.inner.replace_document_projection(d, c, e, s)
     }
     fn get_chunks_by_document(
         &self,
@@ -452,12 +442,8 @@ fn context_window_propagates_document_lookup_failures() {
     let broken = BrokenDocLookupStore {
         inner: InMemoryDocumentStore::default(),
     };
-    let mut lib = Library::new(
-        broken,
-        UsearchIndex::new(DIM).expect("index"),
-        HashEmbedder::new(DIM),
-    )
-    .expect("build library");
+    let mut lib =
+        Library::new(broken, hash_index(), HashEmbedder::new(DIM)).expect("build library");
     lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest");
 
     let err = lib
@@ -491,6 +477,15 @@ struct NamedModelEmbedder {
     model: &'static str,
 }
 
+impl NamedModelEmbedder {
+    fn new(model: &'static str) -> Self {
+        Self {
+            inner: HashEmbedder::new(DIM),
+            model,
+        }
+    }
+}
+
 impl Embedder for NamedModelEmbedder {
     fn embed(&self, texts: &[&str]) -> nucklavee::Result<Vec<Vec<f32>>> {
         self.inner.embed(texts)
@@ -503,58 +498,173 @@ impl Embedder for NamedModelEmbedder {
     }
 }
 
+/// A library over `store` configured for a named model, with a matching
+/// empty index.
+fn named_model_library(
+    store: InMemoryDocumentStore,
+    model: &'static str,
+) -> nucklavee::Result<Library<InMemoryDocumentStore, UsearchIndex, NamedModelEmbedder>> {
+    let embedder = NamedModelEmbedder::new(model);
+    let index = UsearchIndex::for_embedder(&embedder).expect("index");
+    Library::new(store, index, embedder)
+}
+
+// --- embedding-space stabilization scenarios (2026-07-14 gate) ---------------
+
 #[test]
-fn changing_embedding_model_at_same_dimension_triggers_reprocessing() {
+fn different_document_under_a_different_model_cannot_enter_the_library() {
     use nucklavee::storage::DocumentStore;
 
     let store = InMemoryDocumentStore::default();
 
-    let first = {
-        let mut lib = Library::new(
-            store.clone(),
-            UsearchIndex::new(DIM).expect("index"),
-            NamedModelEmbedder {
-                inner: HashEmbedder::new(DIM),
-                model: "model-a",
-            },
-        )
-        .expect("build");
+    // Model A ingests document A and binds the store's space.
+    let doc_a = {
+        let mut lib = named_model_library(store.clone(), "model-a").expect("build a");
         lib.ingest(Source::RawMarkdown(DOC.into()))
             .expect("ingest a")
     };
-    let fingerprint_a = store
-        .get_document(first)
+    let embeddings_before = store.get_all_embeddings().expect("emb");
+    let fingerprint_before = store
+        .get_document(doc_a)
         .expect("doc")
         .meta
         .processing_fingerprint;
 
-    // Same bytes, same dimension, different model: equal dimensions do NOT
-    // imply a shared vector space, so this must reprocess (same stable id,
-    // new fingerprint) rather than silently reuse model-a's embeddings.
-    let second = {
-        let mut lib = Library::new(
-            store.clone(),
-            UsearchIndex::new(DIM).expect("index"),
-            NamedModelEmbedder {
-                inner: HashEmbedder::new(DIM),
-                model: "model-b",
-            },
-        )
-        .expect("build");
-        lib.ingest(Source::RawMarkdown(DOC.into()))
-            .expect("ingest b")
-    };
-    assert_eq!(first, second, "reprocessing keeps a stable document id");
-    let fingerprint_b = store
-        .get_document(first)
-        .expect("doc")
-        .meta
-        .processing_fingerprint;
-    assert_ne!(
-        fingerprint_a, fingerprint_b,
-        "a model change must change the processing fingerprint"
-    );
+    // Model B (same dimension) over the same store: construction itself must
+    // fail — before any ingest or query is possible.
+    let err = named_model_library(store.clone(), "model-b")
+        .err()
+        .expect("construction under a different model must fail");
+    assert!(matches!(err, Error::EmbeddingSpaceMismatch(_)), "got {err}");
+
+    // Document A and its embeddings are untouched; nothing new was written.
     assert_eq!(store.list_documents().expect("list").len(), 1);
+    assert_eq!(
+        store
+            .get_document(doc_a)
+            .expect("doc")
+            .meta
+            .processing_fingerprint,
+        fingerprint_before
+    );
+    let embeddings_after = store.get_all_embeddings().expect("emb");
+    assert_eq!(embeddings_before.len(), embeddings_after.len());
+}
+
+/// Vector index that panics on `search` — proves no query is dispatched.
+struct PanicOnSearchIndex {
+    inner: UsearchIndex,
+}
+
+impl nucklavee::vector::VectorIndex for PanicOnSearchIndex {
+    fn embedding_space(&self) -> &nucklavee::embedder::EmbeddingSpace {
+        self.inner.embedding_space()
+    }
+    fn add(&mut self, id: nucklavee::chunking::ChunkId, vector: Vec<f32>) -> nucklavee::Result<()> {
+        self.inner.add(id, vector)
+    }
+    fn remove(&mut self, id: nucklavee::chunking::ChunkId) -> nucklavee::Result<()> {
+        self.inner.remove(id)
+    }
+    fn search(
+        &self,
+        _query: &[f32],
+        _limit: usize,
+    ) -> nucklavee::Result<Vec<(nucklavee::chunking::ChunkId, f32)>> {
+        panic!("no query may reach the vector index under a mismatched model");
+    }
+    fn clear(&mut self) -> nucklavee::Result<()> {
+        self.inner.clear()
+    }
+    fn save(&self, path: &std::path::Path) -> nucklavee::Result<()> {
+        self.inner.save(path)
+    }
+    fn load(&mut self, path: &std::path::Path) -> nucklavee::Result<()> {
+        self.inner.load(path)
+    }
+}
+
+#[test]
+fn query_after_model_switch_fails_before_reaching_usearch() {
+    let store = InMemoryDocumentStore::default();
+
+    // Persist a model-A library.
+    {
+        let mut lib = named_model_library(store.clone(), "model-a").expect("build a");
+        lib.ingest(Source::RawMarkdown(DOC.into()))
+            .expect("ingest a");
+    }
+
+    // "Restart" configured for model B at the same dimension. Construction
+    // must fail; the panic-on-search index proves usearch never sees a
+    // model-B query vector against model-A data.
+    let embedder_b = NamedModelEmbedder::new("model-b");
+    let index = PanicOnSearchIndex {
+        inner: UsearchIndex::for_embedder(&embedder_b).expect("index"),
+    };
+    let err = Library::new(store, index, embedder_b)
+        .err()
+        .expect("model-B library over model-A store must not construct");
+    assert!(matches!(err, Error::EmbeddingSpaceMismatch(_)), "got {err}");
+}
+
+#[test]
+fn rebuild_under_the_wrong_model_is_refused_and_mutates_nothing() {
+    use nucklavee::storage::DocumentStore;
+
+    let store = InMemoryDocumentStore::default();
+
+    // The construction gate is the normal defense for the CLI rebuild path,
+    // so reaching `rebuild_index` with a mismatch requires the store to be
+    // bound AFTER construction: build the model-B library over the still-
+    // unbound store, then let a model-A writer bind it.
+    let mut lib_b =
+        named_model_library(store.clone(), "model-b").expect("unbound store constructs");
+    {
+        let mut lib_a = named_model_library(store.clone(), "model-a").expect("build a");
+        lib_a
+            .ingest(Source::RawMarkdown(DOC.into()))
+            .expect("ingest a");
+    }
+    let embeddings_before = store.get_all_embeddings().expect("emb").len();
+
+    let err = lib_b
+        .rebuild_index()
+        .expect_err("rebuild must not launder model-A vectors into a model-B index");
+    assert!(matches!(err, Error::EmbeddingSpaceMismatch(_)), "got {err}");
+    assert_eq!(
+        store.get_all_embeddings().expect("emb").len(),
+        embeddings_before,
+        "stored embeddings remain untouched"
+    );
+
+    // And the ordinary restart route is refused at construction.
+    let err = named_model_library(store.clone(), "model-b")
+        .err()
+        .expect("model-B library over a model-A store must not construct");
+    assert!(matches!(err, Error::EmbeddingSpaceMismatch(_)), "got {err}");
+}
+
+#[test]
+fn same_model_restart_loads_and_queries() {
+    let store = InMemoryDocumentStore::default();
+    {
+        let mut lib = named_model_library(store.clone(), "model-a").expect("build");
+        lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest");
+    }
+
+    // Restart with an equivalent model-A configuration: construction
+    // succeeds, rebuild repopulates the fresh index, and query works.
+    let mut lib = named_model_library(store, "model-a").expect("same-model restart");
+    lib.rebuild_index().expect("rebuild");
+    let hits = lib
+        .query("ocean salt water tides moon", 3)
+        .expect("query after same-model restart");
+    assert!(
+        hits[0].content.to_lowercase().contains("ocean"),
+        "restarted library ranks correctly:\n{}",
+        hits[0].content
+    );
 }
 
 #[test]
@@ -562,12 +672,7 @@ fn same_bytes_ingested_as_markdown_and_html_are_not_conflated() {
     use nucklavee::storage::DocumentStore;
 
     let store = InMemoryDocumentStore::default();
-    let mut lib = Library::new(
-        store.clone(),
-        UsearchIndex::new(DIM).expect("index"),
-        HashEmbedder::new(DIM),
-    )
-    .expect("build");
+    let mut lib = Library::new(store.clone(), hash_index(), HashEmbedder::new(DIM)).expect("build");
 
     // Bytes that are valid in both formats but parse differently.
     let bytes = "# Heading\n\n<p>body paragraph</p>\n";
@@ -633,15 +738,12 @@ fn invalid_embedder_output_never_reaches_the_store() {
 
     for (label, poison) in poisons {
         let store = InMemoryDocumentStore::default();
-        let mut lib = Library::new(
-            store.clone(),
-            UsearchIndex::new(DIM).expect("index"),
-            MalformedEmbedder {
-                dimension: DIM,
-                poison,
-            },
-        )
-        .expect("build");
+        let embedder = MalformedEmbedder {
+            dimension: DIM,
+            poison,
+        };
+        let index = UsearchIndex::for_embedder(&embedder).expect("index");
+        let mut lib = Library::new(store.clone(), index, embedder).expect("build");
 
         let err = lib
             .ingest(Source::RawMarkdown(DOC.into()))
@@ -661,6 +763,70 @@ fn invalid_embedder_output_never_reaches_the_store() {
     }
 }
 
-// Arc is used by FlakyEmbedder's AtomicUsize import group.
-#[allow(dead_code)]
-fn _keep_arc_import(_x: Arc<()>) {}
+/// Embedder that behaves normally while ingesting (multi-text batches) but
+/// returns poisoned output for single-text (query) calls.
+struct QueryPoisonEmbedder {
+    inner: HashEmbedder,
+    poison: fn(&HashEmbedder) -> Vec<Vec<f32>>,
+}
+
+impl Embedder for QueryPoisonEmbedder {
+    fn embed(&self, texts: &[&str]) -> nucklavee::Result<Vec<Vec<f32>>> {
+        if texts.len() == 1 {
+            return Ok((self.poison)(&self.inner));
+        }
+        self.inner.embed(texts)
+    }
+    fn dimension(&self) -> usize {
+        self.inner.dimension()
+    }
+    fn fingerprint(&self) -> String {
+        self.inner.fingerprint()
+    }
+}
+
+#[test]
+fn malformed_query_embeddings_never_reach_the_index() {
+    type Poison = fn(&HashEmbedder) -> Vec<Vec<f32>>;
+    let poisons: [(&str, Poison); 6] = [
+        ("zero vectors", |_| Vec::new()),
+        ("two vectors for one query", |e| {
+            vec![vec![1.0; e.dimension()], vec![1.0; e.dimension()]]
+        }),
+        ("wrong dimension", |e| vec![vec![1.0; e.dimension() + 1]]),
+        ("NaN", |e| {
+            let mut v = vec![1.0; e.dimension()];
+            v[0] = f32::NAN;
+            vec![v]
+        }),
+        ("positive infinity", |e| {
+            let mut v = vec![1.0; e.dimension()];
+            v[0] = f32::INFINITY;
+            vec![v]
+        }),
+        ("negative infinity", |e| {
+            let mut v = vec![1.0; e.dimension()];
+            v[0] = f32::NEG_INFINITY;
+            vec![v]
+        }),
+    ];
+
+    for (label, poison) in poisons {
+        let embedder = QueryPoisonEmbedder {
+            inner: HashEmbedder::new(DIM),
+            poison,
+        };
+        let index = UsearchIndex::for_embedder(&embedder).expect("index");
+        let mut lib =
+            Library::new(InMemoryDocumentStore::default(), index, embedder).expect("build");
+        lib.ingest(Source::RawMarkdown(DOC.into())).expect("ingest");
+
+        let err = lib
+            .query("apples", 3)
+            .expect_err("malformed query vectors must be rejected before usearch");
+        assert!(
+            matches!(err, Error::Embedding(_)),
+            "{label}: expected an embedding error, got {err}"
+        );
+    }
+}

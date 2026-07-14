@@ -416,7 +416,7 @@ fn cross_format_integrity_blog_post() {
 fn library_ingests_raw_html_and_emits_markdown() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");
@@ -435,7 +435,7 @@ fn library_ingests_raw_html_and_emits_markdown() {
 fn library_ingests_html_file_by_extension() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");
@@ -450,7 +450,7 @@ fn library_ingests_html_file_by_extension() {
 fn library_rejects_unsupported_extension_with_contract_message() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");

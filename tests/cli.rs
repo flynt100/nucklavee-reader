@@ -70,6 +70,8 @@ struct Fixture {
     config: PathBuf,
     doc: PathBuf,
     index: PathBuf,
+    db: PathBuf,
+    endpoint: String,
 }
 
 impl Fixture {
@@ -91,25 +93,32 @@ impl Fixture {
         )
         .expect("write doc");
 
-        let config = dir.join("config.toml");
+        let fx = Self {
+            config: dir.join("config.toml"),
+            dir,
+            doc,
+            index,
+            db,
+            endpoint,
+        };
+        fx.set_model("test-model");
+        fx
+    }
+
+    /// (Re)write the config for a given embedding model — simulates an
+    /// operator changing models between invocations.
+    fn set_model(&self, model: &str) {
         std::fs::write(
-            &config,
+            &self.config,
             format!(
-                "[storage]\ndatabase = \"{}\"\nvector_index = \"{}\"\n\n[embedding]\nendpoint = \"{}\"\nmodel = \"test-model\"\ndimension = {}\nuse_env_proxy = false\n",
-                db.display(),
-                index.display(),
-                endpoint,
+                "[storage]\ndatabase = \"{}\"\nvector_index = \"{}\"\n\n[embedding]\nendpoint = \"{}\"\nmodel = \"{model}\"\ndimension = {}\nuse_env_proxy = false\n",
+                self.db.display(),
+                self.index.display(),
+                self.endpoint,
                 DIM,
             ),
         )
         .expect("write config");
-
-        Self {
-            dir,
-            config,
-            doc,
-            index,
-        }
     }
 
     fn run(&self, args: &[&str]) -> (i32, String, String) {
@@ -309,6 +318,119 @@ fn rebuild_index_works_when_index_files_are_missing_entirely() {
     let (code, out, err) = fx.run(&["search", "salt water ocean", "--limit", "3"]);
     assert_eq!(code, 0, "search after rebuild failed: {err}");
     assert!(!out.contains("(no results)"), "results expected: {out}");
+}
+
+#[test]
+fn wrong_configured_model_fails_clearly_before_search() {
+    let fx = Fixture::new();
+    let doc = fx.doc.to_string_lossy().to_string();
+
+    let (code, _, err) = fx.run(&["ingest", &doc]);
+    assert_eq!(code, 0, "ingest failed: {err}");
+
+    // Same endpoint and dimension, different model name: the persisted index
+    // and store belong to test-model's space, so every normal command must
+    // refuse before anything reaches usearch.
+    fx.set_model("other-model");
+    let (code, _, err) = fx.run(&["search", "apples", "--limit", "3"]);
+    assert_eq!(code, 1, "search under the wrong model must fail");
+    assert!(
+        err.contains("embedding-space mismatch"),
+        "diagnostic should name the mismatch: {err}"
+    );
+    assert!(
+        err.to_lowercase().contains("cannot convert"),
+        "diagnostic should explain rebuild cannot convert models: {err}"
+    );
+
+    // Restoring the original model restores service.
+    fx.set_model("test-model");
+    let (code, _, err) = fx.run(&["search", "apples", "--limit", "3"]);
+    assert_eq!(code, 0, "search after restoring the model failed: {err}");
+}
+
+#[test]
+fn rebuild_index_refuses_the_wrong_model_and_explains_why() {
+    let fx = Fixture::new();
+    let doc = fx.doc.to_string_lossy().to_string();
+
+    let (code, _, err) = fx.run(&["ingest", &doc]);
+    assert_eq!(code, 0, "ingest failed: {err}");
+
+    // Corrupt the index so rebuild looks tempting, then switch models:
+    // rebuild must refuse — the store's durable embeddings belong to
+    // test-model and cannot be converted.
+    std::fs::write(&fx.index, b"\x00corrupted\xff").expect("corrupt index");
+    fx.set_model("other-model");
+    let (code, _, err) = fx.run(&["rebuild-index"]);
+    assert_eq!(code, 1, "rebuild under the wrong model must fail");
+    assert!(
+        err.contains("embedding-space mismatch"),
+        "diagnostic should name the mismatch: {err}"
+    );
+
+    // With the right model, the same rebuild succeeds.
+    fx.set_model("test-model");
+    let (code, out, err) = fx.run(&["rebuild-index"]);
+    assert_eq!(code, 0, "same-space rebuild failed: {err}");
+    assert!(out.contains("rebuilt index"), "rebuild output: {out}");
+}
+
+#[test]
+fn legacy_pre_space_database_produces_the_migration_error() {
+    let fx = Fixture::new();
+
+    // Craft a schema-v2 database (full v2 schema, no library_metadata) that
+    // already contains an embedding whose model identity is unrecorded.
+    let conn = rusqlite::Connection::open(&fx.db).expect("open raw sqlite");
+    conn.execute_batch(
+        r#"
+        CREATE TABLE documents (
+            id            TEXT PRIMARY KEY,
+            source        TEXT NOT NULL,
+            source_format TEXT NOT NULL,
+            title         TEXT,
+            ingested_at   TEXT NOT NULL,
+            content_hash  TEXT NOT NULL UNIQUE,
+            doc_json      TEXT NOT NULL
+        );
+        CREATE TABLE chunks (
+            id             TEXT PRIMARY KEY,
+            document_id    TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            section_path   TEXT NOT NULL,
+            content        TEXT NOT NULL,
+            block_type     TEXT NOT NULL,
+            sequence_index INTEGER NOT NULL,
+            token_count    INTEGER NOT NULL,
+            chunk_json     TEXT NOT NULL
+        );
+        CREATE TABLE chunk_embeddings (
+            chunk_id    TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+            dimension   INTEGER NOT NULL,
+            vector_json TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX idx_chunks_doc_seq ON chunks(document_id, sequence_index);
+        PRAGMA user_version = 2;
+        INSERT INTO documents VALUES
+            ('11111111-1111-1111-1111-111111111111', 'legacy.md', 'Markdown',
+             'Legacy', '2026-07-01T00:00:00Z', 'legacyhash', '{}');
+        INSERT INTO chunks VALUES
+            ('22222222-2222-2222-2222-222222222222',
+             '11111111-1111-1111-1111-111111111111',
+             '[]', 'legacy chunk', 'Prose', 0, 2, '{}');
+        INSERT INTO chunk_embeddings VALUES
+            ('22222222-2222-2222-2222-222222222222', 8, '[1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]');
+        "#,
+    )
+    .expect("craft legacy database");
+    drop(conn);
+
+    let (code, _, err) = fx.run(&["list"]);
+    assert_eq!(code, 1, "a legacy database must fail closed");
+    assert!(
+        err.contains("legacy embeddings") && err.contains("re-ingest"),
+        "diagnostic should document the migration path: {err}"
+    );
 }
 
 #[test]
