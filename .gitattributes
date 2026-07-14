@@ -1,0 +1,4 @@
+# Force LF in working trees on every platform. Parser tests feed fixture
+# files (tests/fixtures, tests/corpus) to byte-offset-sensitive code, so a
+# Windows autocrlf checkout must not rewrite their line endings.
+* text=auto eol=lf
