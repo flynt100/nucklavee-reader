@@ -4,8 +4,8 @@
 
 mod config;
 
-use std::process::ExitCode;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use serde::Serialize;
@@ -34,9 +34,17 @@ fn main() -> ExitCode {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let cfg = Config::load(cli.config.as_deref())?;
-    let mut lib = build_library(&cfg)?;
     let json = cli.json;
 
+    // `rebuild-index` is the recovery path for an index that cannot load, so
+    // it must never itself load the existing index files: it starts from an
+    // empty index and repopulates it from the authoritative store.
+    if matches!(cli.command, Command::RebuildIndex) {
+        let mut lib = build_library(&cfg, false)?;
+        return cmd_rebuild_index(&mut lib, &cfg, json);
+    }
+
+    let mut lib = build_library(&cfg, true)?;
     match cli.command {
         Command::Ingest {
             path,
@@ -48,17 +56,30 @@ fn run() -> Result<()> {
         Command::Info { id } => cmd_info(&lib, id, json),
         Command::Context { query, budget } => cmd_context(&lib, &query, budget),
         Command::Remove { id } => cmd_remove(&mut lib, &cfg, id),
-        Command::RebuildIndex => cmd_rebuild_index(&mut lib, &cfg, json),
+        Command::RebuildIndex => unreachable!("handled before the index is loaded"),
     }
 }
 
-fn build_library(cfg: &Config) -> Result<Lib> {
-    let store = SqliteDocumentStore::open(&cfg.storage.database)?;
-    let mut index = UsearchIndex::new(cfg.embedding.dimension)?;
-    if cfg.storage.vector_index.exists() {
-        index.load(&cfg.storage.vector_index)?;
-    }
+fn build_library(cfg: &Config, load_existing_index: bool) -> Result<Lib> {
+    // Construction order matters: the embedder is built first because its
+    // embedding space configures the index; the persisted index is then
+    // loaded against that expected space (never adopting whatever is on
+    // disk), and `Library::new` finally cross-checks the store's binding.
     let embedder = ApiEmbedder::new(cfg.embedder_config())?;
+    let mut index = UsearchIndex::for_embedder(&embedder)?;
+    if load_existing_index && cfg.storage.vector_index.exists() {
+        index.load(&cfg.storage.vector_index).map_err(|e| match e {
+            // A wrong-space index is not corruption; `rebuild-index` cannot
+            // convert models, so don't point at it.
+            Error::EmbeddingSpaceMismatch(_) => e,
+            other => Error::VectorIndex(format!(
+                "vector index at '{}' failed to load: {other}; run `nucklavee \
+                 rebuild-index` to rebuild it from the document store",
+                cfg.storage.vector_index.display()
+            )),
+        })?;
+    }
+    let store = SqliteDocumentStore::open(&cfg.storage.database)?;
     Library::new(store, index, embedder)
 }
 
@@ -181,7 +202,11 @@ fn cmd_list(lib: &Lib, json: bool) -> Result<()> {
         println!("(no documents)");
     }
     for meta in &docs {
-        println!("{}\t{}", meta.id, meta.title.as_deref().unwrap_or("(untitled)"));
+        println!(
+            "{}\t{}",
+            meta.id,
+            meta.title.as_deref().unwrap_or("(untitled)")
+        );
     }
     Ok(())
 }

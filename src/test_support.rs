@@ -10,14 +10,34 @@ use std::path::Path;
 
 use crate::Result;
 use crate::chunking::ChunkId;
-use crate::embedder::Embedder;
+use crate::embedder::{Embedder, EmbeddingSpace};
 use crate::vector::VectorIndex;
 
-/// Vector index that stores nothing and finds nothing.
-#[derive(Debug, Default, Clone)]
-pub struct NoopVectorIndex;
+/// Vector index that stores nothing and finds nothing. Its default embedding
+/// space matches [`NoopEmbedder`], the embedder it is normally paired with;
+/// use [`NoopVectorIndex::for_space`] to pair it with anything else.
+#[derive(Debug, Clone)]
+pub struct NoopVectorIndex {
+    space: EmbeddingSpace,
+}
+
+impl NoopVectorIndex {
+    pub fn for_space(space: EmbeddingSpace) -> Self {
+        Self { space }
+    }
+}
+
+impl Default for NoopVectorIndex {
+    fn default() -> Self {
+        Self::for_space(NoopEmbedder.embedding_space())
+    }
+}
 
 impl VectorIndex for NoopVectorIndex {
+    fn embedding_space(&self) -> &EmbeddingSpace {
+        &self.space
+    }
+
     fn add(&mut self, _id: ChunkId, _vector: Vec<f32>) -> Result<()> {
         Ok(())
     }
@@ -54,6 +74,10 @@ impl Embedder for NoopEmbedder {
 
     fn dimension(&self) -> usize {
         8
+    }
+
+    fn fingerprint(&self) -> String {
+        "noop|dim=8".to_string()
     }
 }
 
@@ -99,5 +123,9 @@ impl Embedder for HashEmbedder {
 
     fn dimension(&self) -> usize {
         self.dimension
+    }
+
+    fn fingerprint(&self) -> String {
+        format!("hash-bow|v1|dim={}", self.dimension)
     }
 }

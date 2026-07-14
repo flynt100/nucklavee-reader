@@ -176,8 +176,15 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
   durable embeddings + `rebuild_index`, embedder response permutation
   validation. See `docs/adr/0001-persistence-and-index-consistency.md` and
   `CHANGELOG.md`.
+- **2026-07-14 final stabilization gate implemented:** collection-wide
+  embedding-space identity enforced across SQLite (schema v3), the
+  configured embedder, and usearch manifests (v2); query-embedding
+  validation; keymap integrity hardening. See ADR 0001 (2026-07-14
+  amendments) and `CHANGELOG.md`. **The gate is satisfied only after
+  formatting, clippy, and tests pass on both Linux and Windows CI** — PDF
+  work must not start before that.
 - **Exact next focus:** **Phase 6 — the PDF pipeline (audit Tasks 11–12)**,
-  pending a comprehensive last-pass review before greenlighting.
+  not started; greenlit only once the cross-platform CI gate above passes.
 - **Task plan reference:** `docs/audits/2026-07-06-full-scope.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).

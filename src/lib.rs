@@ -1,12 +1,12 @@
 //! Nucklavee: universal document transformation library.
 
 pub mod chunking;
+pub mod contract;
 pub mod embedder;
 pub mod emitters;
 pub mod ir;
 pub mod net;
 pub mod parsers;
-pub mod contract;
 pub mod storage;
 /// Test-only stubs and deterministic fakes. Excluded from production builds;
 /// enabled for this crate's own tests via the self dev-dependency.
@@ -59,9 +59,54 @@ where
     V: vector::VectorIndex,
     E: embedder::Embedder,
 {
-    /// Construct a library. Loads the chunker's tokenizer, so this is
-    /// fallible.
+    /// Construct a library. Fallible for two reasons: it loads the chunker's
+    /// tokenizer, and it enforces the collection-wide embedding-space
+    /// invariant — the configured embedder, the store's bound space, and the
+    /// vector index must all describe one vector space, checked here so a
+    /// mismatched library cannot even be constructed (per-document
+    /// fingerprints never see a search-only session).
     pub fn new(store: S, index: V, embedder: E) -> Result<Self> {
+        let configured = embedder.embedding_space();
+
+        if *index.embedding_space() != configured {
+            return Err(Error::EmbeddingSpaceMismatch(format!(
+                "the vector index is configured for the embedding space {}, \
+                 but the embedder produces {}. Construct the index from the \
+                 same embedder configuration",
+                index.embedding_space(),
+                configured
+            )));
+        }
+
+        match store.embedding_space()? {
+            Some(bound) if bound != configured => {
+                return Err(Error::EmbeddingSpaceMismatch(format!(
+                    "this library's stored embeddings belong to the embedding \
+                     space {bound}, but the configured embedder produces \
+                     {configured}. Rebuild-index cannot convert embeddings \
+                     between models; reconfigure the original model or create \
+                     a new library and re-ingest the documents"
+                )));
+            }
+            Some(_) => {}
+            None => {
+                // Unbound metadata with durable embeddings means the store
+                // predates space tracking (schema < 3). Those vectors' model
+                // identity cannot be verified, so fail closed instead of
+                // adopting the configured model for them.
+                if store.has_embeddings()? {
+                    return Err(Error::Consistency(
+                        "this library contains legacy embeddings without \
+                         vector-space metadata; their model identity cannot \
+                         be verified. Create a new library and re-ingest the \
+                         documents, or run an explicit embedding migration \
+                         when one is available"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+
         Ok(Self {
             store,
             index,
@@ -104,10 +149,9 @@ where
                         IngestInput::Markdown(read("markdown")?),
                         path.display().to_string(),
                     ),
-                    "html" | "htm" => (
-                        IngestInput::Html(read("html")?),
-                        path.display().to_string(),
-                    ),
+                    "html" | "htm" => {
+                        (IngestInput::Html(read("html")?), path.display().to_string())
+                    }
                     "pdf" => {
                         return Err(contract::not_implemented(
                             contract::PDF_PIPELINE_NOT_IMPLEMENTED,
@@ -120,7 +164,9 @@ where
                     }
                 }
             }
-            Source::RawMarkdown(markdown) => (IngestInput::Markdown(markdown), "raw:markdown".to_string()),
+            Source::RawMarkdown(markdown) => {
+                (IngestInput::Markdown(markdown), "raw:markdown".to_string())
+            }
             Source::RawHtml(html) => (IngestInput::Html(html), "raw:html".to_string()),
             Source::Url(url) => {
                 let fetched = net::fetch(&url)?;
@@ -166,7 +212,7 @@ where
         let mut doc = doc;
         normalize_document(&mut doc);
         doc.meta.processing_fingerprint =
-            processing_fingerprint(&options, self.embedder.dimension());
+            processing_fingerprint(&options, doc.meta.format, &self.embedder);
 
         // Deduplication (spec §7.4) is content **and** configuration aware:
         // identical raw content processed under the same settings reuses the
@@ -197,36 +243,55 @@ where
         } else {
             let texts: Vec<&str> = chunks.iter().map(|c| c.content.as_str()).collect();
             let vectors = self.embedder.embed(&texts)?;
-            if vectors.len() != chunks.len() {
-                return Err(Error::Embedding(format!(
-                    "embedder returned {} vectors for {} chunks",
-                    vectors.len(),
-                    chunks.len()
-                )));
-            }
+            // The store is authoritative and the index is rebuilt from it, so
+            // every persisted embedding must be valid for the configured
+            // index — regardless of which Embedder implementation produced
+            // it. Rejecting here keeps invalid vectors out of SQLite.
+            embedder::validate_embedding_batch(
+                &vectors,
+                chunks.len(),
+                &self.embedder.embedding_space(),
+                "document ingestion",
+            )?;
             vectors
         };
 
-        if reprocessing {
-            for old in self.store.get_chunks_by_document(doc.meta.id)? {
-                self.index.remove(old.id)?;
-            }
-        }
+        // The previous generation's chunk IDs must be captured *before* the
+        // projection replacement retires them from the store.
+        let old_chunk_ids: Vec<chunking::ChunkId> = if reprocessing {
+            self.store
+                .get_chunks_by_document(doc.meta.id)?
+                .into_iter()
+                .map(|c| c.id)
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // Atomic in the store: document + chunks + embeddings land together
-        // (or not at all). Embeddings are durable so the index below is a
-        // derived projection that can always be rebuilt from the store.
-        self.store
-            .replace_document_projection(&doc, &chunks, &vectors)?;
+        // (or not at all). The authoritative commit happens FIRST; only then
+        // is the derived index touched, so a failure anywhere in index
+        // maintenance leaves the store correct and is repairable by
+        // `rebuild_index()`.
+        self.store.replace_document_projection(
+            &doc,
+            &chunks,
+            &vectors,
+            &self.embedder.embedding_space(),
+        )?;
 
+        let consistency = |e: Error| {
+            Error::Consistency(format!(
+                "document {} is stored but vector-index maintenance failed: {e}; \
+                 run rebuild_index() (CLI: `nucklavee rebuild-index`) to repair",
+                doc.meta.id
+            ))
+        };
+        for old_id in old_chunk_ids {
+            self.index.remove(old_id).map_err(consistency)?;
+        }
         for (chunk, vector) in chunks.iter().zip(vectors) {
-            self.index.add(chunk.id, vector).map_err(|e| {
-                Error::Consistency(format!(
-                    "document {} is stored but vector indexing failed: {e}; \
-                     run rebuild_index() (CLI: `nucklavee rebuild-index`) to repair",
-                    doc.meta.id
-                ))
-            })?;
+            self.index.add(chunk.id, vector).map_err(consistency)?;
         }
 
         Ok(doc.meta.id)
@@ -236,7 +301,30 @@ where
     /// re-calling the embedding provider. Returns the number of vectors
     /// indexed. Safe to run repeatedly; repairs a missing, stale, or
     /// partially-written index.
+    ///
+    /// On failure the in-memory index may be partially populated; the fix is
+    /// the same operation — run `rebuild_index()` again. Persisted index
+    /// files are untouched (callers persist explicitly via [`Self::save_index`]
+    /// after a successful rebuild), so a failed rebuild never damages the
+    /// on-disk generation.
     pub fn rebuild_index(&mut self) -> Result<usize> {
+        // Construction already proved store/index/embedder agree, but rebuild
+        // re-checks the store's binding: a rebuild moves durable embeddings
+        // into the index wholesale, and must never launder another model's
+        // vectors into the configured space.
+        let configured = self.embedder.embedding_space();
+        match self.store.embedding_space()? {
+            Some(bound) if bound != configured => {
+                return Err(Error::EmbeddingSpaceMismatch(format!(
+                    "cannot rebuild: the store's durable embeddings belong to \
+                     the embedding space {bound}, but the configured embedder \
+                     produces {configured}. Rebuilding cannot convert \
+                     embeddings between models; reconfigure the original \
+                     model or create a new library and re-ingest the documents"
+                )));
+            }
+            _ => {}
+        }
         self.index.clear()?;
         let pairs = self.store.get_all_embeddings()?;
         let count = pairs.len();
@@ -257,13 +345,19 @@ where
         if limit == 0 {
             return Ok(Vec::new());
         }
-        let query_vector = self
-            .embedder
-            .embed(&[text])?
-            .into_iter()
-            .next()
-            .ok_or_else(|| Error::Embedding("embedder returned no vector for query".to_string()))?;
-        let hits = self.index.search(&query_vector, limit)?;
+        // Query vectors cross the same trust boundary as ingest vectors: an
+        // arbitrary Embedder may return the wrong count, a wrong dimension,
+        // or non-finite values, and none of that may reach usearch. Extra
+        // vectors are an error, never silently discarded.
+        let vectors = self.embedder.embed(&[text])?;
+        embedder::validate_embedding_batch(
+            &vectors,
+            1,
+            &self.embedder.embedding_space(),
+            "query embedding",
+        )?;
+        let query_vector = &vectors[0];
+        let hits = self.index.search(query_vector, limit)?;
         let ids: Vec<chunking::ChunkId> = hits.into_iter().map(|(id, _)| id).collect();
         self.store.get_chunks_by_ids(&ids)
     }
@@ -345,13 +439,27 @@ where
     }
 
     /// Remove a document and its chunks from both the store and the vector
-    /// index. Idempotent.
+    /// index. Idempotent. The authoritative store is updated first; if the
+    /// derived index then fails to clean up, the error directs the operator
+    /// to `rebuild_index()` rather than leaving a document that is stored but
+    /// half-searchable.
     pub fn remove_document(&mut self, id: DocumentId) -> Result<()> {
-        let chunks = self.store.get_chunks_by_document(id)?;
-        for chunk in &chunks {
-            self.index.remove(chunk.id)?;
-        }
+        let chunk_ids: Vec<chunking::ChunkId> = self
+            .store
+            .get_chunks_by_document(id)?
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
         self.store.remove_document(id)?;
+        for chunk_id in chunk_ids {
+            self.index.remove(chunk_id).map_err(|e| {
+                Error::Consistency(format!(
+                    "document {id} was removed from the store but index cleanup \
+                     failed: {e}; run rebuild_index() (CLI: `nucklavee \
+                     rebuild-index`) to repair",
+                ))
+            })?;
+        }
         Ok(())
     }
 
@@ -370,12 +478,33 @@ where
     }
 }
 
-/// Canonical fingerprint of every ingest setting that changes derived output.
-/// Format-versioned (`fp1|…`) so future settings extend rather than collide.
-fn processing_fingerprint(options: &IngestOptions, embed_dimension: usize) -> String {
+/// Canonical fingerprint of everything that changes a document's derived
+/// output: how the bytes were interpreted (source format + parser policy),
+/// how they were normalized and chunked, and which vector space they were
+/// embedded into. Two ingests may share a fingerprint only if their stored
+/// projections are interchangeable. Format-versioned (`fp2|…`) so future
+/// settings extend rather than collide.
+fn processing_fingerprint<E: embedder::Embedder>(
+    options: &IngestOptions,
+    format: SourceFormat,
+    embedder: &E,
+) -> String {
+    let parser_policy = match format {
+        SourceFormat::Markdown => parsers::markdown::PARSER_POLICY_VERSION,
+        SourceFormat::Html => parsers::html::PARSER_POLICY_VERSION,
+        // No PDF parser exists yet; give it a distinct token so the first
+        // real implementation cannot collide with text-format fingerprints.
+        SourceFormat::Pdf => "pdf0-unimplemented",
+    };
     let canonical = format!(
-        "fp1|normalize_bare_callouts={}|token_budget={}|embed_dimension={}",
-        options.normalize_bare_callouts, options.token_budget, embed_dimension
+        "fp2|format={format:?}|parser_policy={parser_policy}\
+         |normalize_bare_callouts={}|chunker={}|token_budget={}\
+         |embedder={}|embed_dimension={}",
+        options.normalize_bare_callouts,
+        chunking::structural::CHUNKER_VERSION,
+        options.token_budget,
+        embedder.fingerprint(),
+        embedder.dimension()
     );
     parsers::sha256_hex(&canonical)
 }
@@ -461,6 +590,15 @@ pub enum Error {
     /// Directs the operator toward verification or `rebuild_index`.
     #[error("consistency error: {0}")]
     Consistency(String),
+
+    /// The configured embedder's vector space does not match the space bound
+    /// to the store or the persisted index. Distinct from `Consistency`
+    /// because the remedy differs: `rebuild-index` repairs derived-index
+    /// corruption but can never convert stored embeddings between models —
+    /// the fix is reconfiguring the original model or re-ingesting into a
+    /// new library.
+    #[error("embedding-space mismatch: {0}")]
+    EmbeddingSpaceMismatch(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

@@ -10,10 +10,7 @@ use nucklavee::embedder::Embedder;
 use nucklavee::embedder::api::{ApiEmbedder, ApiEmbedderConfig};
 
 /// Serve one HTTP response, capturing the request body for assertions.
-fn serve_once(
-    status_line: &str,
-    body: &str,
-) -> (String, std::sync::mpsc::Receiver<String>) {
+fn serve_once(status_line: &str, body: &str) -> (String, std::sync::mpsc::Receiver<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let addr = listener.local_addr().expect("addr");
     let (tx, rx) = std::sync::mpsc::channel();
@@ -63,9 +60,14 @@ fn embeds_texts_and_preserves_order() {
     assert_eq!(embedder.dimension(), 3);
 
     // Request carried the model and both inputs.
-    let request = rx.recv_timeout(Duration::from_secs(5)).expect("request captured");
+    let request = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("request captured");
     assert!(request.contains("test-model"), "request: {request}");
-    assert!(request.contains("hello") && request.contains("world"), "request: {request}");
+    assert!(
+        request.contains("hello") && request.contains("world"),
+        "request: {request}"
+    );
 }
 
 #[test]
@@ -106,8 +108,8 @@ fn http_error_status_surfaces_as_embedding_error() {
 #[test]
 fn empty_input_makes_no_request() {
     // Endpoint intentionally unreachable; empty input must short-circuit.
-    let embedder = ApiEmbedder::new(config("http://192.0.2.1:9/v1/embeddings".into(), 3))
-        .expect("embedder");
+    let embedder =
+        ApiEmbedder::new(config("http://192.0.2.1:9/v1/embeddings".into(), 3)).expect("embedder");
     let vectors = embedder.embed(&[]).expect("empty embed");
     assert!(vectors.is_empty());
 }

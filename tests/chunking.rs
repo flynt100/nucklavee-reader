@@ -16,7 +16,12 @@ fn doc(markdown: &str) -> Document {
 fn chunk(markdown: &str, budget: usize) -> Vec<Chunk> {
     let chunker = StructuralChunker::new().expect("tokenizer loads offline");
     chunker
-        .chunk(&doc(markdown), &ChunkOptions { token_budget: budget })
+        .chunk(
+            &doc(markdown),
+            &ChunkOptions {
+                token_budget: budget,
+            },
+        )
         .expect("chunk")
 }
 
@@ -93,9 +98,21 @@ fn section_paths_match_heading_hierarchy() {
 #[test]
 fn block_types_are_tagged() {
     let chunks = chunk(SAMPLE, 512);
-    assert!(chunks.iter().any(|c| matches!(c.block_type, ChunkBlockType::Prose)));
-    assert!(chunks.iter().any(|c| matches!(c.block_type, ChunkBlockType::Code)));
-    assert!(chunks.iter().any(|c| matches!(c.block_type, ChunkBlockType::Table)));
+    assert!(
+        chunks
+            .iter()
+            .any(|c| matches!(c.block_type, ChunkBlockType::Prose))
+    );
+    assert!(
+        chunks
+            .iter()
+            .any(|c| matches!(c.block_type, ChunkBlockType::Code))
+    );
+    assert!(
+        chunks
+            .iter()
+            .any(|c| matches!(c.block_type, ChunkBlockType::Table))
+    );
 
     // The code chunk carries the code text, not the language marker.
     let code = chunks
@@ -174,14 +191,21 @@ fn oversized_table_splits_by_rows_reprepending_header() {
         .iter()
         .filter(|c| matches!(c.block_type, ChunkBlockType::Table))
         .collect();
-    assert!(table_chunks.len() > 1, "expected the table to split by rows");
+    assert!(
+        table_chunks.len() > 1,
+        "expected the table to split by rows"
+    );
     for c in &table_chunks {
         assert!(
             c.content.starts_with("Key | Value"),
             "each table chunk must re-prepend the header:\n{}",
             c.content
         );
-        assert!(c.token_count <= 12, "table chunk over budget:\n{}", c.content);
+        assert!(
+            c.token_count <= 12,
+            "table chunk over budget:\n{}",
+            c.content
+        );
     }
 }
 

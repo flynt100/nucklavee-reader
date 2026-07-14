@@ -183,7 +183,8 @@ fn maps_table_with_thead_and_inline_formatting() {
 
 #[test]
 fn headerless_table_promotes_first_row_with_diagnostic() {
-    let html = "<body><table><tr><td>a</td><td>b</td></tr><tr><td>1</td><td>2</td></tr></table></body>";
+    let html =
+        "<body><table><tr><td>a</td><td>b</td></tr><tr><td>1</td><td>2</td></tr></table></body>";
     let doc = parse_html(html, opts());
     validate(&doc, None).expect("valid IR");
 
@@ -240,9 +241,11 @@ fn unknown_element_degrades_to_generic_block_with_class_hint() {
         .body
         .iter()
         .find_map(|n| match &n.block {
-            Block::GenericBlock { content, hint, confidence } => {
-                Some((content.clone(), hint.clone(), *confidence))
-            }
+            Block::GenericBlock {
+                content,
+                hint,
+                confidence,
+            } => Some((content.clone(), hint.clone(), *confidence)),
             _ => None,
         })
         .expect("expected a GenericBlock");
@@ -251,8 +254,7 @@ fn unknown_element_degrades_to_generic_block_with_class_hint() {
     assert!(
         doc.diagnostics
             .iter()
-            .any(|d| d.kind == DiagnosticKind::Unsupported
-                && d.message.contains("widget-panel")),
+            .any(|d| d.kind == DiagnosticKind::Unsupported && d.message.contains("widget-panel")),
         "expected unsupported-element diagnostic: {:?}",
         doc.diagnostics
     );
@@ -267,7 +269,9 @@ fn anchor_without_href_flattens_and_empty_img_is_dropped() {
     let text = plain_text_of(&doc);
     assert!(text.contains("bare anchor"));
     assert!(
-        doc.diagnostics.iter().any(|d| d.kind == DiagnosticKind::Lossy),
+        doc.diagnostics
+            .iter()
+            .any(|d| d.kind == DiagnosticKind::Lossy),
         "expected lossy diagnostics: {:?}",
         doc.diagnostics
     );
@@ -318,7 +322,8 @@ fn section_paths_follow_heading_hierarchy() {
 
 #[test]
 fn title_prefers_title_tag_then_h1_then_og_title() {
-    let with_title = "<html><head><title>From Title</title></head><body><h1>From H1</h1></body></html>";
+    let with_title =
+        "<html><head><title>From Title</title></head><body><h1>From H1</h1></body></html>";
     assert_eq!(
         parse_html(with_title, opts()).meta.title.as_deref(),
         Some("From Title")
@@ -411,7 +416,7 @@ fn cross_format_integrity_blog_post() {
 fn library_ingests_raw_html_and_emits_markdown() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");
@@ -430,7 +435,7 @@ fn library_ingests_raw_html_and_emits_markdown() {
 fn library_ingests_html_file_by_extension() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");
@@ -445,7 +450,7 @@ fn library_ingests_html_file_by_extension() {
 fn library_rejects_unsupported_extension_with_contract_message() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");

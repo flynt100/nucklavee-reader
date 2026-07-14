@@ -114,7 +114,10 @@ fn shielded_spans_inside_inline_code_are_restored_not_replaced_by_sentinel() {
         !code.contains('\u{00A4}'),
         "sentinel must not leak into code content: {code:?}"
     );
-    assert_eq!(code, "\\* \\_ \\[ \\]", "code content must be preserved verbatim");
+    assert_eq!(
+        code, "\\* \\_ \\[ \\]",
+        "code content must be preserved verbatim"
+    );
 
     let emitted = nucklavee::emitters::markdown::emit_markdown(&doc);
     assert!(

@@ -10,7 +10,7 @@ use nucklavee::{Format, Library};
 fn library() -> Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder> {
     Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library")
@@ -20,7 +20,7 @@ fn library() -> Library<InMemoryDocumentStore, NoopVectorIndex, NoopEmbedder> {
 fn reingesting_identical_content_returns_existing_document_id() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");
@@ -44,7 +44,7 @@ fn reingesting_identical_content_returns_existing_document_id() {
 fn differing_content_gets_distinct_document_ids() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");
@@ -67,13 +67,21 @@ fn emits_all_three_supported_formats() {
         .ingest(Source::RawMarkdown("# title\n\nbody\n".into()))
         .expect("ingest");
 
-    assert!(lib.emit(id, Format::Markdown).expect("md").contains("# title"));
+    assert!(
+        lib.emit(id, Format::Markdown)
+            .expect("md")
+            .contains("# title")
+    );
     assert!(
         lib.emit(id, Format::Html)
             .expect("html")
             .contains("<h1>title</h1>")
     );
-    assert!(lib.emit(id, Format::PlainText).expect("text").contains("TITLE"));
+    assert!(
+        lib.emit(id, Format::PlainText)
+            .expect("text")
+            .contains("TITLE")
+    );
 }
 
 #[test]

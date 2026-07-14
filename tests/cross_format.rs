@@ -8,12 +8,12 @@ use std::path::{Path, PathBuf};
 
 use nucklavee::emitters::html::emit_html;
 use nucklavee::emitters::markdown::emit_markdown;
+use nucklavee::ir::Source;
 use nucklavee::parsers::html::{HtmlParseOptions, parse_html};
 use nucklavee::parsers::markdown::{ParseOptions, parse_markdown};
-use nucklavee::{Format, Library, structural_diff_bodies, validate};
-use nucklavee::ir::Source;
 use nucklavee::storage::memory::InMemoryDocumentStore;
 use nucklavee::test_support::{NoopEmbedder, NoopVectorIndex};
+use nucklavee::{Format, Library, structural_diff_bodies, validate};
 
 fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -86,7 +86,7 @@ fn html_emit_escapes_and_maps_styles() {
 fn library_emits_html_format() {
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");
@@ -113,6 +113,8 @@ fn round_trips_html_to_markdown_to_html_is_stable() {
     let html_doc2 = parse_html(&back_to_html, HtmlParseOptions::default());
 
     if let Some(diff) = structural_diff_bodies(&md_doc, &html_doc2) {
-        panic!("html→md→html structural drift: {diff}\n--- markdown ---\n{markdown}\n--- html2 ---\n{back_to_html}");
+        panic!(
+            "html→md→html structural drift: {diff}\n--- markdown ---\n{markdown}\n--- html2 ---\n{back_to_html}"
+        );
     }
 }

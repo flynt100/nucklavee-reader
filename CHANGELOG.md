@@ -3,6 +3,63 @@
 Notable changes to nucklavee, newest first. Phases refer to the roadmap in
 `TODO.md`; task numbers refer to `docs/audits/2026-07-06-full-scope.md`.
 
+## 2026-07-14 — Collection-wide embedding-space identity (final pre-PDF gate)
+
+Enforced collection-wide embedding-space identity across SQLite, the
+configured embedder, and usearch manifests. Details in ADR 0001's
+2026-07-14 amendments.
+
+- **Breaking (trait):** `EmbeddingSpace` is a first-class type;
+  `Embedder::embedding_space()` (default from `fingerprint()`/
+  `dimension()`), `VectorIndex::embedding_space()`, and
+  `DocumentStore::{embedding_space, has_embeddings}` added;
+  `replace_document_projection` takes the projection's space;
+  `UsearchIndex::new` takes an `EmbeddingSpace` (or use `for_embedder`).
+  `ApiEmbedder`'s fingerprint is now versioned (`api-space-v1|…`).
+- **Breaking (files):** SQLite schema v3 adds the `library_metadata`
+  singleton; index manifest v2 records the space fingerprint in the
+  manifest and keymap sidecar (v1 manifests no longer load — rebuild).
+- The first stored projection binds a library to one vector space,
+  transactionally; later projections, `Library::new`, index load, and
+  `rebuild-index` all require an exact match. Same-dimension model changes
+  are rejected before any search or mutation with an
+  `Error::EmbeddingSpaceMismatch` explaining that rebuild cannot convert
+  models. Legacy (pre-v3) stores with unidentified embeddings fail closed.
+- Query embeddings validated like ingest embeddings (count, dimension,
+  finiteness) via one shared helper; `UsearchIndex::search` additionally
+  rejects non-finite query values.
+- Keymap loads reject duplicate keys, duplicate chunk IDs, stale
+  `next_key`, entry-count disagreement, and manifest/keymap space
+  mismatches — corrupt keymaps can no longer silently collapse mappings.
+
+## 2026-07-13 — Stabilization gate (second external review)
+
+Pre-PDF hardening; details in ADR 0001's amendments.
+
+- **Breaking (trait):** `Embedder` gains `fingerprint()` — the stable
+  identity of the vector space it produces (never includes API keys).
+- **Breaking (files):** vector-index persistence moved to a
+  generation-manifest layout (manifest at the configured path + two
+  generation-stamped artifacts); saves commit atomically via one manifest
+  rename, loads verify generation/dimension/entry-count across all files.
+  Pre-manifest index files no longer load — run `nucklavee rebuild-index`.
+- Processing fingerprints (`fp2`) now cover source format, parser policy
+  version, chunker+tokenizer version, token budget, and embedder identity:
+  changing embedding models at the same dimension, or re-ingesting the same
+  bytes under a different format, reprocesses instead of reusing
+  incompatible derived data.
+- Embeddings are validated (dimension, finiteness) at both the library and
+  storage boundaries — no arbitrary `Embedder` can persist vectors that
+  cannot rebuild the index.
+- CLI `rebuild-index` no longer loads the existing index, so it works when
+  the index is corrupt or missing; index load failures in other commands
+  point at it.
+- Reprocessing and removal commit the store before touching the index;
+  index-maintenance failures surface as consistency errors directing at
+  rebuild. A failed retire of a replaced usearch vector is an error.
+- CI added: fmt, clippy (`-D warnings`), and tests on Linux and Windows;
+  repository formatted with `cargo fmt`.
+
 ## 2026-07-13 — Reliability pass (external-review remediation)
 
 Consistency model adopted: **SQLite authoritative, usearch derived** —

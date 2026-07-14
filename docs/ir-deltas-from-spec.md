@@ -82,8 +82,11 @@ revised in the 2026-07-13 reliability pass (see
 - `VectorIndex`: `add` (replacement-safe), `remove`, `search`, `clear`,
   `save(&Path)`, `load(&Path)`. The index is a derived projection; the store
   is authoritative.
-- `Embedder`: unchanged from spec, **blocking I/O** — implementations use
-  `reqwest::blocking`; no tokio/async runtime in the MVP.
+- `Embedder`: **blocking I/O** — implementations use `reqwest::blocking`;
+  no tokio/async runtime in the MVP. Beyond the spec, the trait requires
+  `fingerprint()` — a stable identity of the vector space the embedder
+  produces (equal dimensions do not imply comparable vectors). It feeds the
+  ingest `processing_fingerprint` and must never contain secrets.
 
 ### Backend implementations (Tasks 6 & 8) and their edge cases
 
@@ -100,9 +103,13 @@ revised in the 2026-07-13 reliability pass (see
     does not compile on stable.
 - **`UsearchIndex`** (`usearch`, cosine HNSW). **Key-width bridge:** usearch
   addresses vectors by `u64`, but `ChunkId` is a 128-bit UUID, so the index
-  keeps a bidirectional `u64 ⇆ ChunkId` map and assigns sequential `u64` keys.
-  `save`/`load` persist that map in a `<index>.keymap.json` sidecar (the raw
-  usearch file only stores `u64` keys). `search` returns
+  keeps a bidirectional `u64 ⇆ ChunkId` map and assigns sequential `u64` keys
+  (the raw usearch file only stores `u64` keys). **Generation-manifest
+  persistence:** `save` writes generation-stamped index + keymap artifacts
+  (`<path>.g<gen>.usearch`, `<path>.g<gen>.keymap.json`) and then atomically
+  replaces the small manifest at `<path>` naming the active generation;
+  `load` verifies generation, dimension, and entry count across all three
+  files and rejects mixed-generation combinations. `search` returns
   `(ChunkId, cosine_distance)` ascending (closest first).
 - **`ApiEmbedder`** (OpenAI-compatible `/v1/embeddings`, `reqwest::blocking`).
   Request/response JSON is (de)serialized manually with `serde_json` because
@@ -190,11 +197,16 @@ treat `byte_range` as optional (it already is in the type).
   leaves nothing behind and retrying is always safe (see
   `docs/adr/0001-persistence-and-index-consistency.md`).
 - Dedupe is two-level: `content_hash` (SHA-256 of the raw input, spec §7.4)
-  detects identical bytes; `processing_fingerprint` (hash of ingest options +
-  embedder dimension) detects identical *processing*. Hash hit + matching
-  fingerprint returns the existing ID with no work; hash hit + different
-  fingerprint reprocesses **in place** under the same `DocumentId` (provenance
-  retagged, old vectors removed, projection replaced atomically).
+  detects identical bytes; `processing_fingerprint` detects identical
+  *processing*. The fingerprint (`fp2`) hashes the whole interpretation
+  chain: source format, parser policy version (`PARSER_POLICY_VERSION` per
+  parser), normalization options, chunker+tokenizer version
+  (`CHUNKER_VERSION`), token budget, and `Embedder::fingerprint()` +
+  dimension. Hash hit + matching fingerprint returns the existing ID with no
+  work; hash hit + different fingerprint (changed options, changed model,
+  changed format, bumped policy version) reprocesses **in place** under the
+  same `DocumentId` (provenance retagged; the store commits first, then the
+  index is reconciled).
 - `rebuild_index()` (CLI `rebuild-index`) repopulates the vector index from
   embeddings stored in SQLite — no re-embedding, no network.
 - `query(text, limit)` embeds the query, `index.search`es, and joins the hit
@@ -231,9 +243,12 @@ treat `byte_range` as optional (it already is in the type).
 ## CLI (spec §8)
 
 The full command set is implemented (Task 10):
-`ingest`/`search`/`emit`/`list`/`info`/`context`/`remove`, configured by a
-TOML file (`--config`, default `~/.config/forge/config.toml`) that names the
-SQLite database, usearch index, and embedding endpoint. `--json` gives
-machine-readable output. The vector index is persisted to its file after
-`ingest`/`remove` (its UUID⇆u64 keymap sidecar travels with it). See
+`ingest`/`search`/`emit`/`list`/`info`/`context`/`remove`/`rebuild-index`,
+configured by a TOML file (`--config`, default `~/.config/forge/config.toml`)
+that names the SQLite database, usearch index, and embedding endpoint.
+`--json` gives machine-readable output. The vector index is persisted (as a
+generation manifest + artifacts, see `UsearchIndex` above) after
+`ingest`/`remove`/`rebuild-index`. `rebuild-index` never loads the existing
+index files — it is the recovery path when they cannot load — and other
+commands whose index load fails print an error pointing at it. See
 `docs/cli.md`.

@@ -74,8 +74,8 @@ fn falls_back_to_extension_for_plain_text() {
 #[test]
 fn http_error_status_is_a_network_error() {
     let base = serve_once("404 Not Found", Some("text/html"), "nope");
-    let err = fetch_with_options(&format!("{base}/missing"), &opts())
-        .expect_err("404 must be an error");
+    let err =
+        fetch_with_options(&format!("{base}/missing"), &opts()).expect_err("404 must be an error");
     assert!(
         matches!(err, nucklavee::Error::Network(ref m) if m.contains("HTTP 404")),
         "unexpected error: {err}"
@@ -114,7 +114,7 @@ fn library_ingests_url_and_preserves_final_url_as_provenance() {
 
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
-        NoopVectorIndex,
+        NoopVectorIndex::default(),
         NoopEmbedder,
     )
     .expect("build library");
@@ -131,7 +131,10 @@ fn library_ingests_url_and_preserves_final_url_as_provenance() {
     };
 
     let doc = lib.get_document(id).expect("stored doc");
-    assert_eq!(doc.meta.source.raw_source, url, "final URL preserved as provenance");
+    assert_eq!(
+        doc.meta.source.raw_source, url,
+        "final URL preserved as provenance"
+    );
     assert_eq!(doc.meta.title.as_deref(), Some("Fetched Page"));
 
     let markdown = lib.emit(id, Format::Markdown).expect("emit markdown");

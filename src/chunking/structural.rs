@@ -24,6 +24,12 @@ use crate::chunking::{Chunk, ChunkBlockType, ChunkOptions, Chunker};
 use crate::emitters::text::{emit_text_blocks, render_inlines_plain};
 use crate::ir::{Block, BlockNode, DocumentId, Inline};
 
+/// Version of the chunking algorithm + its tokenizer. Bump on any change
+/// that alters how a given document chunks (grouping, splitting, budgets,
+/// tokenizer swap) — it feeds the ingest `processing_fingerprint`, so a bump
+/// triggers reprocessing instead of reusing stale chunk boundaries.
+pub const CHUNKER_VERSION: &str = "structural1+cl100k_base";
+
 pub struct StructuralChunker {
     bpe: CoreBPE,
 }
@@ -120,10 +126,7 @@ fn split_sentences(text: &str) -> Vec<String> {
     for (i, &ch) in chars.iter().enumerate() {
         current.push(ch);
         let is_terminator = matches!(ch, '.' | '?' | '!');
-        let next_is_boundary = chars
-            .get(i + 1)
-            .map(|n| n.is_whitespace())
-            .unwrap_or(true);
+        let next_is_boundary = chars.get(i + 1).map(|n| n.is_whitespace()).unwrap_or(true);
         if (is_terminator && next_is_boundary) || ch == '\n' {
             let trimmed = current.trim();
             if !trimmed.is_empty() {
@@ -213,8 +216,9 @@ impl<'a> Builder<'a> {
         let budget = self.budget;
         let pieces = self.chunker.pack(block_units, budget, "\n\n", |unit| {
             let sentences = split_sentences(unit);
-            self.chunker
-                .pack(sentences, budget, " ", |s| self.chunker.token_window_split(s, budget))
+            self.chunker.pack(sentences, budget, " ", |s| {
+                self.chunker.token_window_split(s, budget)
+            })
         });
         for piece in pieces {
             self.push_chunk(piece, ChunkBlockType::Prose, &path);
@@ -230,9 +234,9 @@ impl<'a> Builder<'a> {
         }
         let segments: Vec<String> = content.split("\n\n").map(str::to_string).collect();
         let budget = self.budget;
-        let pieces = self
-            .chunker
-            .pack(segments, budget, "\n\n", |s| self.chunker.token_window_split(s, budget));
+        let pieces = self.chunker.pack(segments, budget, "\n\n", |s| {
+            self.chunker.token_window_split(s, budget)
+        });
         for piece in pieces {
             self.push_chunk(piece, ChunkBlockType::Code, &path);
         }
@@ -309,11 +313,7 @@ fn table_content(header: &str, rows: &[String], extra: Option<&str>) -> String {
 }
 
 impl Chunker for StructuralChunker {
-    fn chunk(
-        &self,
-        document: &crate::ir::Document,
-        opts: &ChunkOptions,
-    ) -> Result<Vec<Chunk>> {
+    fn chunk(&self, document: &crate::ir::Document, opts: &ChunkOptions) -> Result<Vec<Chunk>> {
         let budget = opts.token_budget.max(1);
         let mut builder = Builder::new(self, document.meta.id, budget);
         for node in &document.body {

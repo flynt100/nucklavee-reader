@@ -267,7 +267,6 @@ fn roundtrip_math_inline_underscore_asterisk_fixture() {
     roundtrip("21_math_inline_underscore_asterisk.md");
 }
 
-
 #[test]
 // Policy E: real-world Obsidian sample with raw HTML must remain expected-diagnostic and structurally deterministic.
 fn roundtrip_real_world_obsidian_fixture_expected_diagnostic() {
@@ -294,7 +293,6 @@ fn provenance_ranges_are_in_bounds() {
     let doc = parse_markdown(&source, opts());
     walk_ranges(&doc, source.len());
 }
-
 
 fn assert_resolved_idempotent_roundtrip(label: &str, source: &str, iterations: usize) {
     assert!(
@@ -463,7 +461,6 @@ fn parse_emit_is_deterministic_for_phase2b_fallback_fixtures() {
     );
     assert_deterministic_parse_emit(&label_bad, &source_bad, 5);
 }
-
 
 #[test]
 // Policy E (Finding 3 regression): pass criteria is zero structural diff and stable emission across repeated parse->emit cycles.
