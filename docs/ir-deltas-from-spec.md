@@ -244,7 +244,8 @@ treat `byte_range` as optional (it already is in the type).
 
 The full command set is implemented (Task 10):
 `ingest`/`search`/`emit`/`list`/`info`/`context`/`remove`/`rebuild-index`,
-configured by a TOML file (`--config`, default `~/.config/forge/config.toml`)
+configured by a TOML file (`--config`, default
+`~/.config/nucklavee/config.toml`, with legacy Forge fallback)
 that names the SQLite database, usearch index, and embedding endpoint.
 `--json` gives machine-readable output. The vector index is persisted (as a
 generation manifest + artifacts, see `UsearchIndex` above) after

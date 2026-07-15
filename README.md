@@ -1,8 +1,15 @@
 # Nucklavee
 
-Nucklavee is a Rust-first **universal document transformation library** focused on:
+Nucklavee is a Rust-first, provenance-rich document transformation and
+semantic-retrieval tool for Markdown and HTML.
 
-- Parsing heterogeneous sources (Markdown, HTML, PDF) into one intermediate representation (IR)
+> **Experimental v0.1:** Markdown and HTML workflows are implemented and
+> tested. PDF ingestion is not available, and public APIs and storage schemas
+> may change before v1.0.
+
+Nucklavee focuses on:
+
+- Parsing Markdown, HTML, and trusted HTTP(S) sources into one intermediate representation (IR)
 - Structure-aware chunking with provenance metadata
 - Embedding and vector search over chunks
 - Context-window assembly for LLM/RAG workflows
@@ -16,6 +23,54 @@ the spec's sketches and the implemented types are recorded in
 Build a standalone crate and CLI that can ingest source documents and produce reliable, provenance-rich semantic retrieval context.
 
 In short: **normalize anything, preserve structure, and make it searchable.**
+
+## Install
+
+Nucklavee currently installs from GitHub:
+
+```bash
+cargo install --git https://github.com/flynt100/nucklavee-reader
+```
+
+For development:
+
+```bash
+git clone https://github.com/flynt100/nucklavee-reader.git
+cd nucklavee-reader
+cargo build --release --locked
+```
+
+The native `usearch` dependency may require the platform's C/C++ build tools.
+
+## Five-minute quick start
+
+Create `~/.config/nucklavee/config.toml`:
+
+```toml
+[storage]
+database = "/home/you/.local/share/nucklavee/library.sqlite"
+vector_index = "/home/you/.local/share/nucklavee/library.usearch"
+
+[embedding]
+endpoint = "https://api.openai.com/v1/embeddings"
+model = "text-embedding-3-small"
+dimension = 1536
+```
+
+Set the API key outside the config file and run the basic workflow:
+
+```bash
+export NUCKLAVEE_EMBEDDING_API_KEY="..."
+nucklavee ingest ./notes/example.md
+nucklavee search "what does this document say about indexing?"
+nucklavee context "summarize the indexing design" --budget 1500
+```
+
+PowerShell:
+
+```powershell
+$env:NUCKLAVEE_EMBEDDING_API_KEY = "..."
+```
 
 ## What Works Right Now
 
@@ -124,7 +179,8 @@ cargo test
 ### CLI usage
 
 The CLI is a persistent library backed by SQLite + a usearch index, configured
-by a TOML file (`--config`, default `~/.config/forge/config.toml`). Ingest in
+by a TOML file (`--config`, default `~/.config/nucklavee/config.toml`). The
+legacy `~/.config/forge/config.toml` path remains a fallback. Ingest in
 one invocation is searchable in the next.
 
 ```bash
@@ -149,6 +205,33 @@ cargo run --bin nucklavee -- rebuild-index
 `emit` formats: `markdown`, `html`, `text`. `ingest`/`search`/`context`
 require a configured embedding endpoint. See `docs/cli.md` for the full
 command reference and config schema.
+
+## Security, privacy, and limitations
+
+- Document chunks and search queries are sent to the configured embedding
+  endpoint. For sensitive material, use a trusted provider or local model.
+- URL ingestion is for trusted local use, not as a hardened web crawler or a
+  direct multi-user service boundary. Responses are limited to 10 MiB;
+  loopback, private, link-local, and other non-public destinations are blocked
+  by default, including after redirects. Library integrations can explicitly
+  opt in through `FetchOptions::allow_private_networks`; the CLI does not expose
+  that override. DNS rebinding remains a residual risk.
+- JavaScript-rendered pages are not executed, and extraction is heuristic.
+- PDF, office-document, and OCR ingestion are not implemented.
+- Search quality depends on the embedding model, and a library is permanently
+  bound to one embedding space.
+- Large-corpus performance has not yet been characterized.
+
+See `SECURITY.md` for vulnerability reporting and supported deployment scope.
+
+## Contributing
+
+Contributions are welcome. Read `CONTRIBUTING.md` before opening a pull
+request, particularly the test gate and guidance for AI-assisted changes.
+
+## License
+
+Nucklavee is available under the [MIT License](LICENSE).
 
 ## Reference Docs
 

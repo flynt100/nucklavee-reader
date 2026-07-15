@@ -124,6 +124,18 @@ where
         source: Source,
         options: IngestOptions,
     ) -> Result<DocumentId> {
+        self.ingest_with_fetch_options(source, options, &net::FetchOptions::default())
+    }
+
+    /// Ingest with an explicit HTTP policy. This is primarily useful for
+    /// trusted local integrations that intentionally permit private networks;
+    /// ordinary callers should use [`Library::ingest`] and its secure defaults.
+    pub fn ingest_with_fetch_options(
+        &mut self,
+        source: Source,
+        options: IngestOptions,
+        fetch_options: &net::FetchOptions,
+    ) -> Result<DocumentId> {
         enum IngestInput {
             Markdown(String),
             Html(String),
@@ -169,7 +181,7 @@ where
             }
             Source::RawHtml(html) => (IngestInput::Html(html), "raw:html".to_string()),
             Source::Url(url) => {
-                let fetched = net::fetch(&url)?;
+                let fetched = net::fetch_with_options(&url, fetch_options)?;
                 let input = match fetched.kind {
                     net::FetchedKind::Markdown => IngestInput::Markdown(fetched.body),
                     net::FetchedKind::Html => IngestInput::Html(fetched.body),

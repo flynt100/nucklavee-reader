@@ -3,6 +3,21 @@
 Notable changes to nucklavee, newest first. Phases refer to the roadmap in
 `TODO.md`; task numbers refer to `docs/audits/2026-07-06-full-scope.md`.
 
+## Unreleased — Open-source MVP hardening
+
+- Added the MIT license, package metadata, contributor/security policies, and
+  an experimental-v0.1 release posture.
+- Bounded URL responses to 10 MiB and blocked non-public destinations by
+  default, with redirect revalidation and explicit trusted-local opt-in.
+  The opt-in is library-only; CLI URL ingestion remains deny-by-default.
+- Added environment-based embedding secrets and retained plaintext TOML only
+  as a compatibility fallback.
+- Moved the preferred config path to `~/.config/nucklavee/config.toml` with a
+  warning-backed legacy Forge fallback.
+- Strengthened CI with locked dependencies, read-only permissions, release
+  builds, package validation, RustSec advisory scanning, and an explicit
+  dependency-license policy.
+
 ## 2026-07-14 — Collection-wide embedding-space identity (final pre-PDF gate)
 
 Enforced collection-wide embedding-space identity across SQLite, the

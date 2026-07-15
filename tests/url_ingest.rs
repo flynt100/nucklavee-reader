@@ -35,9 +35,24 @@ fn serve_once(status_line: &str, content_type: Option<&str>, body: &str) -> Stri
     format!("http://{addr}")
 }
 
+fn serve_raw_once(response: String) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let addr = listener.local_addr().expect("addr");
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 2048];
+            let _ = stream.read(&mut buf);
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+    format!("http://{addr}")
+}
+
 fn opts() -> FetchOptions {
     FetchOptions {
         use_env_proxy: false,
+        allow_private_networks: true,
         timeout: Duration::from_secs(5),
         ..FetchOptions::default()
     }
@@ -87,6 +102,7 @@ fn unreachable_host_is_a_network_error() {
     // Reserved TEST-NET-1 address that should not accept connections.
     let opts = FetchOptions {
         use_env_proxy: false,
+        allow_private_networks: true,
         timeout: Duration::from_millis(600),
         ..FetchOptions::default()
     };
@@ -96,22 +112,71 @@ fn unreachable_host_is_a_network_error() {
 }
 
 #[test]
-fn library_ingests_url_and_preserves_final_url_as_provenance() {
+fn private_networks_are_blocked_by_default() {
+    let base = serve_once("200 OK", Some("text/plain"), "private");
+    let err = fetch_with_options(&base, &FetchOptions::default())
+        .expect_err("loopback must be blocked by default");
+    assert!(err.to_string().contains("non-public destination"), "{err}");
+}
+
+#[test]
+fn declared_oversized_response_is_rejected() {
+    let base = serve_once("200 OK", Some("text/plain"), "123456");
+    let err = fetch_with_options(
+        &base,
+        &FetchOptions {
+            max_response_bytes: 5,
+            ..opts()
+        },
+    )
+    .expect_err("oversized response must fail");
+    assert!(err.to_string().contains("5-byte limit"), "{err}");
+}
+
+#[test]
+fn body_at_the_response_limit_succeeds() {
+    let base = serve_once("200 OK", Some("text/plain"), "12345");
+    let fetched = fetch_with_options(
+        &base,
+        &FetchOptions {
+            max_response_bytes: 5,
+            ..opts()
+        },
+    )
+    .expect("exact limit is allowed");
+    assert_eq!(fetched.body, "12345");
+}
+
+#[test]
+fn lengthless_streamed_body_is_still_bounded() {
+    let base = serve_raw_once(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n123456"
+            .to_string(),
+    );
+    let err = fetch_with_options(
+        &base,
+        &FetchOptions {
+            max_response_bytes: 5,
+            ..opts()
+        },
+    )
+    .expect_err("streamed body over limit must fail");
+    assert!(err.to_string().contains("5-byte limit"), "{err}");
+}
+
+#[test]
+fn library_ingests_url_with_explicit_trusted_local_policy() {
     use nucklavee::ir::Source;
     use nucklavee::storage::memory::InMemoryDocumentStore;
     use nucklavee::test_support::{NoopEmbedder, NoopVectorIndex};
-    use nucklavee::{Format, Library};
+    use nucklavee::{Format, IngestOptions, Library};
 
-    // NOTE: this exercises the fetch → parse → store wiring end to end. It
-    // relies on env-proxy being unset for loopback; the environment's proxy is
-    // HTTPS-only, so a plain-HTTP loopback request goes direct.
     let base = serve_once(
         "200 OK",
         Some("text/html"),
         "<html><head><title>Fetched Page</title></head><body><main><h1>Fetched Page</h1><p>hello from <strong>the web</strong></p></main></body></html>",
     );
     let url = format!("{base}/article");
-
     let mut lib = Library::new(
         InMemoryDocumentStore::default(),
         NoopVectorIndex::default(),
@@ -119,25 +184,15 @@ fn library_ingests_url_and_preserves_final_url_as_provenance() {
     )
     .expect("build library");
 
-    let id = match lib.ingest(Source::Url(url.clone())) {
-        Ok(id) => id,
-        Err(nucklavee::Error::Network(_)) => {
-            // A proxy that intercepts loopback HTTP would land here; skip
-            // rather than fail on an environment-specific network policy.
-            eprintln!("skipping URL-ingest wiring assertion: loopback fetch blocked by proxy");
-            return;
-        }
-        Err(e) => panic!("unexpected ingest error: {e}"),
-    };
-
+    let id = lib
+        .ingest_with_fetch_options(Source::Url(url.clone()), IngestOptions::default(), &opts())
+        .expect("trusted local URL ingest");
     let doc = lib.get_document(id).expect("stored doc");
-    assert_eq!(
-        doc.meta.source.raw_source, url,
-        "final URL preserved as provenance"
-    );
+    assert_eq!(doc.meta.source.raw_source, url);
     assert_eq!(doc.meta.title.as_deref(), Some("Fetched Page"));
-
-    let markdown = lib.emit(id, Format::Markdown).expect("emit markdown");
-    assert!(markdown.contains("# Fetched Page"));
-    assert!(markdown.contains("hello from **the web**"));
+    assert!(
+        lib.emit(id, Format::Markdown)
+            .expect("emit")
+            .contains("hello from **the web**")
+    );
 }
