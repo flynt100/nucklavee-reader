@@ -23,7 +23,7 @@ clap = { version = "4.5", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 pulldown-cmark = { version = "0.10", default-features = false }
 serde = { version = "1", features = ["derive"] }
-sha2 = "0.10"
+sha2 = "0.11"
 thiserror = "2"
 uuid = { version = "1", features = ["serde", "v4"] }
 scraper = { version = "0.27.0", default-features = false }
