@@ -183,8 +183,9 @@ was retired in the 2026-07-06 cleanup; per-push task specs now live in
   amendments) and `CHANGELOG.md`. **The gate is satisfied only after
   formatting, clippy, and tests pass on both Linux and Windows CI** — PDF
   work must not start before that.
-- **Exact next focus:** **Phase 6 — the PDF pipeline (audit Tasks 11–12)**,
-  not started; greenlit only once the cross-platform CI gate above passes.
+- **Exact next focus:** complete the experimental open-source MVP release gate
+  (license, security/privacy boundaries, package validation, documentation),
+  then begin **Phase 6 — the PDF pipeline (audit Tasks 11–12)**.
 - **Task plan reference:** `docs/audits/2026-07-06-full-scope.md` (per-task
   scope fences, guardrails, acceptance criteria).
 - **Gate reference:** `docs/phase-gates.md` (Phase-1 exit criteria and blocker/warning definitions).

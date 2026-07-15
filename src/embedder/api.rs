@@ -19,7 +19,7 @@ use serde::Deserialize;
 use crate::embedder::Embedder;
 use crate::{Error, Result};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ApiEmbedderConfig {
     /// Full embeddings endpoint URL (e.g. `https://api.openai.com/v1/embeddings`).
     pub endpoint: String,
@@ -30,6 +30,19 @@ pub struct ApiEmbedderConfig {
     pub dimension: usize,
     pub use_env_proxy: bool,
     pub timeout: Duration,
+}
+
+impl std::fmt::Debug for ApiEmbedderConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiEmbedderConfig")
+            .field("endpoint", &self.endpoint)
+            .field("model", &self.model)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("dimension", &self.dimension)
+            .field("use_env_proxy", &self.use_env_proxy)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 impl ApiEmbedderConfig {
@@ -48,6 +61,20 @@ impl ApiEmbedderConfig {
     pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
         self.api_key = Some(key.into());
         self
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn debug_output_redacts_api_key() {
+        let config =
+            ApiEmbedderConfig::new("https://example.invalid", "test", 8).with_api_key("top-secret");
+        let debug = format!("{config:?}");
+        assert!(debug.contains("[REDACTED]"));
+        assert!(!debug.contains("top-secret"));
     }
 }
 

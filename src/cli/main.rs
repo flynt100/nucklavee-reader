@@ -85,9 +85,9 @@ fn build_library(cfg: &Config, load_existing_index: bool) -> Result<Lib> {
 
 #[derive(Debug, Parser)]
 #[command(name = "nucklavee")]
-#[command(about = "Universal document ingestion, conversion, and semantic search")]
+#[command(about = "Markdown/HTML ingestion, conversion, and semantic search")]
 struct Cli {
-    /// Path to config TOML (default: ~/.config/forge/config.toml).
+    /// Path to config TOML (default: ~/.config/nucklavee/config.toml).
     #[arg(long, global = true)]
     config: Option<PathBuf>,
     /// Emit machine-readable JSON where applicable.

@@ -6,7 +6,9 @@ invocation is searchable by `search` in the next.
 
 ## Configuration
 
-Read from `--config <path>`, or by default `~/.config/forge/config.toml`:
+Read from `--config <path>`, or by default
+`~/.config/nucklavee/config.toml`. If the new path does not exist, the legacy
+`~/.config/forge/config.toml` is used with a migration warning.
 
 ```toml
 [storage]
@@ -17,14 +19,25 @@ vector_index = "/home/you/.local/share/nucklavee/library.usearch"
 endpoint = "https://api.openai.com/v1/embeddings"
 model = "text-embedding-3-small"
 dimension = 1536
-api_key = "sk-..."     # optional; omit for local servers that need no auth
+api_key_env = "OPENAI_API_KEY" # optional named environment variable
 use_env_proxy = true   # optional; default true
 ```
+
+Secret precedence is: `api_key_env`, `NUCKLAVEE_EMBEDDING_API_KEY`, legacy
+`api_key`, then no authentication. Avoid storing `api_key` in TOML. Document
+chunks and queries are sent to this endpoint, so use a trusted provider or a
+local embedding server for sensitive content.
 
 The embedding `dimension` must match the vectors your endpoint returns and
 stays fixed for the life of an index file. The endpoint is any
 OpenAI-compatible `/v1/embeddings` service (OpenAI, `llama.cpp --embedding`,
 etc.).
+
+URL ingestion limits responses to 10 MiB and blocks loopback, private,
+link-local, multicast, and other non-public destinations by default. Redirect
+destinations are revalidated. It is intended for trusted local use and is not
+a hardened multi-user crawler. The CLI does not expose the library's explicit
+private-network override.
 
 ### One library, one embedding model
 

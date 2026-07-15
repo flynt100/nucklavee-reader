@@ -1,4 +1,4 @@
-//! Shared no-op trait implementations used by tests and the scaffold CLI.
+//! Shared no-op trait implementations used by tests and integration fixtures.
 //!
 //! These are deliberate placeholders for backends that are not implemented
 //! yet (vector index, embedder). They are **not part of the stable API** and

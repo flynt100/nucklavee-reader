@@ -97,3 +97,19 @@ cargo test --test markdown_roundtrip --test cli_smoke_contract
 
 Phase 2B exit is approved only when this command succeeds without failures.
 
+## Experimental MVP release gate
+
+Every candidate revision must pass the same locked-dependency gate locally and
+in CI:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-targets --all-features --locked
+cargo build --release --locked
+cargo package --locked
+```
+
+Release blockers also include a missing license, unbounded URL ingestion,
+undocumented external data transfer, or documentation that claims unsupported
+PDF/office/OCR behavior.
