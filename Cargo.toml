@@ -21,7 +21,7 @@ path = "src/cli/main.rs"
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
-pulldown-cmark = { version = "0.10", default-features = false }
+pulldown-cmark = { version = "0.13", default-features = false }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 thiserror = "2"
