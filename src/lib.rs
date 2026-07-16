@@ -1,4 +1,5 @@
-//! Nucklavee: universal document transformation library.
+//! Nucklavee: provenance-rich document transformation and semantic retrieval
+//! for Markdown and HTML.
 
 pub mod chunking;
 pub mod contract;

@@ -19,7 +19,9 @@ jobs:
       matrix:
         # Windows is included deliberately: vector-index persistence
         # (rename-based manifest replacement) is platform-sensitive.
-        os: [ubuntu-latest, windows-latest]
+        # macOS covers the third supported desktop toolchain for the
+        # native usearch/bundled-SQLite builds.
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

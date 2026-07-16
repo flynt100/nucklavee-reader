@@ -1,0 +1,38 @@
+name: Bug report
+description: A reproducible problem in nucklavee
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: >
+        Minimal steps or input. Do not include credentials or sensitive
+        documents; redact config values.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: v0.1.0 or a commit SHA
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and toolchain
+      placeholder: e.g. Ubuntu 24.04, rustc 1.85
+  - type: markdown
+    attributes:
+      value: >
+        Security vulnerabilities must go through private vulnerability
+        reporting (see SECURITY.md), not a public issue.

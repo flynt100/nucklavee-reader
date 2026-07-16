@@ -8,7 +8,10 @@ invocation is searchable by `search` in the next.
 
 Read from `--config <path>`, or by default
 `~/.config/nucklavee/config.toml`. If the new path does not exist, the legacy
-`~/.config/forge/config.toml` is used with a migration warning.
+`~/.config/forge/config.toml` is used with a migration warning. The home
+directory comes from `HOME` (or `USERPROFILE` on Windows, resolving under
+`%USERPROFILE%\.config\`); platform-native config directories are not yet
+used.
 
 ```toml
 [storage]
