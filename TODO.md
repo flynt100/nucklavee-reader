@@ -120,7 +120,8 @@ Primary goal: expose library capabilities via stable CLI workflows.
 2. [x] Source/input handling: file (`.md`/`.html`/`.htm`) and `http(s)://` URL,
    auto-detected.
 3. [x] Output format controls (`emit <id> <format>`) + `--json` machine output.
-4. [x] Config file (`--config`, default `~/.config/forge/config.toml`) for the
+4. [x] Config file (`--config`, default `~/.config/nucklavee/config.toml`;
+   legacy `forge` path kept as a warned fallback) for the
    SQLite database, vector index, and embedding endpoint; actionable errors.
 5. [x] Smoke tests for every subcommand against a temp SQLite db + a loopback
    mock embedding server (`tests/cli.rs`).

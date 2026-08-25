@@ -138,7 +138,6 @@ revised in the 2026-07-13 reliability pass (see
   `inlines_to_plain`, `GENERIC_BLOCK_DEFAULT_CONFIDENCE`, and
   `SectionPathTracker` (the heading→section-path algorithm used by both
   parsers — do not re-implement it per format).
-- `Emitter` trait exists (`emit(&self, &Document) -> Result<String>`).
 - The HTML emitter (`emitters::html::emit_html`) produces a **fragment**
   (block sequence, no `<html>`/`<body>` wrapper) so it can be re-ingested and
   embedded. Style mapping is the inverse of the parser's:
@@ -223,16 +222,21 @@ treat `byte_range` as optional (it already is in the type).
   H1, which is also the document title, so the title is dropped from the path
   when they match — the header reads `[Source: Title > Section]`, not
   `[Source: Title > Title > Section]`.
-- Embedder and vector-index **dimensions must match**; the `Library` does not
-  enforce this at construction, so a caller wiring a real `ApiEmbedder` to a
-  `UsearchIndex` must build the index with `embedder.dimension()` (otherwise
-  `index.add` errors on the first chunk).
+- `Library::new` enforces exact **embedding-space identity** at construction:
+  the configured embedder, vector index, and any bound store metadata must
+  have the same fingerprint and dimension. Mismatches fail before search or
+  mutation with `Error::EmbeddingSpaceMismatch`; equal dimensions alone are
+  not sufficient because different models do not share a vector space.
 - `Source::Url` ingest goes through `src/net` (blocking `reqwest`): fetch,
-  follow redirects, then choose the parser by `Content-Type`
-  (markdown/html/xml), falling back to the URL path extension and then a
-  leading-`<` body sniff, defaulting to HTML. The post-redirect final URL is
-  stored as `DocumentMeta.source.raw_source`. Failures (build/connect/status/
-  body) surface as `Error::Network`.
+  validate the initial and redirected destinations, enforce redirect and body
+  limits, then choose the parser by `Content-Type` (markdown/html/xml), URL
+  extension, or strong body signals, defaulting to HTML. Public CLI ingestion
+  rejects private, reserved, unallocated, translation, and non-public
+  special-use destinations; IANA-designated globally reachable exceptions
+  remain usable. Trusted library integrations can explicitly opt in through
+  `FetchOptions`. The post-redirect final URL is
+  stored as `DocumentMeta.source.raw_source`. Failures (validation/build/
+  connect/status/body) surface as `Error::Network`.
 - **Proxy/TLS caveat:** `net::fetch` honors `HTTP(S)_PROXY`/`NO_PROXY`. In a
   sandbox whose egress goes through an intercepting HTTPS proxy with a custom
   CA, live `https://` fetches may need that CA trusted by the process; the

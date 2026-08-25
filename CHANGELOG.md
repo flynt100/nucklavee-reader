@@ -10,6 +10,10 @@ Notable changes to nucklavee, newest first. Phases refer to the roadmap in
 - Bounded URL responses to 10 MiB and blocked non-public destinations by
   default, with redirect revalidation and explicit trusted-local opt-in.
   The opt-in is library-only; CLI URL ingestion remains deny-by-default.
+- Made IPv6 destination validation fail closed around allocated global-unicast
+  space and added regressions for reserved, unallocated, translation,
+  documentation, discard-only, non-public IETF-assignment, 6to4, and other
+  non-public special-use prefixes.
 - Added environment-based embedding secrets and retained plaintext TOML only
   as a compatibility fallback.
 - Moved the preferred config path to `~/.config/nucklavee/config.toml` with a
@@ -17,6 +21,10 @@ Notable changes to nucklavee, newest first. Phases refer to the roadmap in
 - Strengthened CI with locked dependencies, read-only permissions, release
   builds, package validation, RustSec advisory scanning, and an explicit
   dependency-license policy.
+- Added macOS to the CI matrix, issue templates, quick-start examples for
+  `list`/`rebuild-index`, defined empty-environment-variable secret behavior
+  in tests, and retired the last stale `forge`/"universal" wording from the
+  crate docs and spec.
 
 ## 2026-07-14 — Collection-wide embedding-space identity (final pre-PDF gate)
 

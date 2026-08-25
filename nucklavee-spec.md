@@ -531,7 +531,7 @@ nucklavee context <query> [--budget N]   # Assemble and print a context window
 nucklavee remove <document_id>           # Remove a document and its chunks from the library
 ```
 
-All commands read config from `~/.config/forge/config.toml` for database path, embedding endpoint, etc. The CLI is the primary testing and debugging interface during development.
+All commands read config from `~/.config/nucklavee/config.toml` (legacy `~/.config/forge/config.toml` remains a warned fallback) for database path, embedding endpoint, etc. The CLI is the primary testing and debugging interface during development.
 
 ---
 

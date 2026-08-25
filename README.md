@@ -64,6 +64,8 @@ export NUCKLAVEE_EMBEDDING_API_KEY="..."
 nucklavee ingest ./notes/example.md
 nucklavee search "what does this document say about indexing?"
 nucklavee context "summarize the indexing design" --budget 1500
+nucklavee list
+nucklavee rebuild-index   # repair a lost/corrupt index from stored embeddings
 ```
 
 PowerShell:
@@ -71,6 +73,8 @@ PowerShell:
 ```powershell
 $env:NUCKLAVEE_EMBEDDING_API_KEY = "..."
 ```
+
+On Windows the default config path resolves under `%USERPROFILE%\.config\`.
 
 ## What Works Right Now
 

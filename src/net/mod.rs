@@ -289,11 +289,61 @@ fn is_public_ip(ip: IpAddr) -> bool {
             if let Some(mapped) = ip.to_ipv4_mapped() {
                 return is_public_ip(IpAddr::V4(mapped));
             }
-            !(ip.is_loopback()
-                || ip.is_unspecified()
-                || ip.is_multicast()
-                || ip.is_unique_local()
-                || ip.is_unicast_link_local())
+
+            let octets = ip.octets();
+            let segments = ip.segments();
+            // Fail closed around the current IANA global-unicast allocation
+            // registry. These aggregates cover only ALLOCATED entries; holes
+            // and RESERVED ranges remain blocked until the table is reviewed.
+            let allocated_public_unicast = match segments[0] {
+                0x2001 => matches!(
+                    segments[1],
+                    0x0000..=0x0fff
+                        | 0x1200..=0x13ff
+                        | 0x1400..=0x17ff
+                        | 0x1800..=0x1fff
+                        | 0x2000..=0x3fff
+                        | 0x4000..=0x47ff
+                        | 0x4800..=0x4bff
+                        | 0x4c00..=0x4dff
+                        | 0x5000..=0x5fff
+                        | 0x8000..=0x9fff
+                        | 0xa000..=0xbfff
+                ),
+                0x2002 => true,
+                0x2003 => segments[1] <= 0x3fff,
+                0x2400..=0x241f
+                | 0x2600..=0x260f
+                | 0x2630..=0x263f
+                | 0x2800..=0x280f
+                | 0x2a00..=0x2a1f
+                | 0x2c00..=0x2c0f => true,
+                0x2610 | 0x2620 => segments[1] <= 0x01ff,
+                _ => false,
+            };
+
+            // IANA marks the 2001::/23 parent as non-global, with a small set
+            // of explicitly globally reachable children. Preserve those exact
+            // exceptions instead of either admitting the whole parent or
+            // blocking legitimate anycast/protocol destinations.
+            let ietf_protocol_assignments =
+                octets[0] == 0x20 && octets[1] == 0x01 && octets[2] <= 0x01;
+            let protocol_anycast = octets[..4] == [0x20, 0x01, 0x00, 0x01]
+                && octets[4..15].iter().all(|byte| *byte == 0)
+                && matches!(octets[15], 1..=3);
+            let amt = octets[..4] == [0x20, 0x01, 0x00, 0x03];
+            let as112 = octets[..6] == [0x20, 0x01, 0x00, 0x04, 0x01, 0x12];
+            let orchid_v2 = octets[..3] == [0x20, 0x01, 0x00] && octets[3] & 0xf0 == 0x20;
+            let dets = octets[..3] == [0x20, 0x01, 0x00] && octets[3] & 0xf0 == 0x30;
+            let globally_reachable_ietf = protocol_anycast || amt || as112 || orchid_v2 || dets;
+
+            let documentation = octets[..4] == [0x20, 0x01, 0x0d, 0xb8];
+            let six_to_four = octets[..2] == [0x20, 0x02];
+
+            allocated_public_unicast
+                && (!ietf_protocol_assignments || globally_reachable_ietf)
+                && !documentation
+                && !six_to_four
         }
     }
 }
@@ -475,12 +525,109 @@ mod tests {
             "::1",
             "fc00::1",
             "fe80::1",
+            "2001:db8::1",
+            "100::1",
             "::ffff:127.0.0.1",
         ] {
             assert!(!is_public_ip(ip.parse().expect("valid IP")), "{ip}");
         }
         assert!(is_public_ip("8.8.8.8".parse().unwrap()));
         assert!(is_public_ip("2606:4700:4700::1111".parse().unwrap()));
+    }
+
+    #[test]
+    fn ipv6_public_destination_policy_matches_iana_boundaries() {
+        for ip in [
+            "64:ff9b::c000:201",
+            "64:ff9b:1::1",
+            "2000::1",
+            "2001::1",
+            "2001:1::",
+            "2001:1::4",
+            "2001:2::1",
+            "2001:4::1",
+            "2001:4:111:ffff::1",
+            "2001:4:113::1",
+            "2001:5::1",
+            "2001:10::1",
+            "2001:1f:ffff::1",
+            "2001:40::1",
+            "2001:1000::1",
+            "2001:4e00::1",
+            "2002:c0a8:101::1",
+            "2003:4000::1",
+            "2004::1",
+            "2420::1",
+            "2610:200::1",
+            "2620:200::1",
+            "2640::1",
+            "2810::1",
+            "2a20::1",
+            "2c10::1",
+            "2d00::1",
+            "2e00::1",
+            "2fff::1",
+            "3000::1",
+            "3ffe::1",
+            "3fff::1",
+            "5f00::1",
+        ] {
+            assert!(!is_public_ip(ip.parse().expect("valid IP")), "{ip}");
+        }
+
+        for ip in [
+            "2001:1::1",
+            "2001:1::2",
+            "2001:1::3",
+            "2001:3::1",
+            "2001:4:112::1",
+            "2001:4:112:ffff:ffff:ffff:ffff:ffff",
+            "2001:20::1",
+            "2001:2f:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:30::1",
+            "2001:3f:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:fff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:1200::1",
+            "2001:13ff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:1400::1",
+            "2001:17ff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:1800::1",
+            "2001:1fff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:2000::1",
+            "2001:3fff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:4000::1",
+            "2001:47ff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:4800::1",
+            "2001:4bff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:4c00::1",
+            "2001:4dff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:5000::1",
+            "2001:5fff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:8000::1",
+            "2001:9fff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:a000::1",
+            "2001:bfff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:4860:4860::8888",
+            "2003:3fff::1",
+            "2400::1",
+            "241f::1",
+            "2600::1",
+            "260f::1",
+            "2610:1ff::1",
+            "2620:1ff::1",
+            "2606:4700:4700::1111",
+            "2620:4f:8000::1",
+            "2630::1",
+            "263f::1",
+            "2800::1",
+            "280f::1",
+            "2a00:1450:4009:80b::200e",
+            "2a1f::1",
+            "2c00::1",
+            "2c0f::1",
+        ] {
+            assert!(is_public_ip(ip.parse().expect("valid IP")), "{ip}");
+        }
     }
 
     #[test]

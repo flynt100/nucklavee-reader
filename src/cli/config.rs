@@ -162,6 +162,24 @@ mod tests {
     }
 
     #[test]
+    fn missing_secret_means_unauthenticated() {
+        let config = embedding(None, None);
+        assert_eq!(resolve_api_key(&config, |_| None), None);
+    }
+
+    #[test]
+    fn empty_environment_values_fall_through() {
+        // An empty variable is treated as unset at every precedence level,
+        // never as an empty bearer token.
+        let config = embedding(Some("file-secret"), Some("OPENAI_API_KEY"));
+        let key = resolve_api_key(&config, |_| Some(String::new()));
+        assert_eq!(key.as_deref(), Some("file-secret"));
+
+        let config = embedding(None, None);
+        assert_eq!(resolve_api_key(&config, |_| Some(String::new())), None);
+    }
+
+    #[test]
     fn preferred_config_path_wins_over_legacy() {
         let home = std::env::temp_dir().join(format!("nucklavee_config_{}", uuid::Uuid::new_v4()));
         let preferred = home.join(".config/nucklavee/config.toml");
